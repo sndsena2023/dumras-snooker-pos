@@ -130,29 +130,57 @@
         </div>
     </div>
 
-    <!-- ================= POPUP: จัดการสินค้า ================= -->
+    <!-- ================= POPUP: จัดการสินค้าและพนักงาน (Admin) ================= -->
     <div id="product-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-purple-700">⚙️ จัดการราคาสินค้า</h2>
-                <button onclick="closeProductManager()" class="text-gray-400 hover:text-red-500">✕ ปิด</button>
+                <h2 class="text-xl font-bold text-purple-700">⚙️ ตั้งค่าระบบและจัดการร้าน</h2>
+                <button onclick="closeProductManager()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
             </div>
-            <div class="bg-purple-50 p-4 rounded-xl mb-4 border border-purple-100">
-                <h3 class="font-bold text-sm mb-2">เพิ่มสินค้าใหม่</h3>
-                <div class="grid grid-cols-2 gap-2 mb-2">
-                    <input type="text" id="new-p-name" placeholder="ชื่อสินค้า" class="px-3 py-2 rounded border text-sm">
-                    <input type="number" id="new-p-price" placeholder="ราคา (บาท)" class="px-3 py-2 rounded border text-sm">
-                    <select id="new-p-category" class="px-3 py-2 rounded border text-sm col-span-2">
-                        <option value="snack">หมวดหมู่: อาหาร/ขนม</option>
-                        <option value="water">หมวดหมู่: น้ำเปล่า</option>
-                        <option value="softdrink">หมวดหมู่: น้ำอัดลม</option>
-                        <option value="alcohol">หมวดหมู่: แอลกอฮอล์</option>
-                    </select>
+            
+            <!-- แท็บสลับหน้าจัดการ (สินค้า / พนักงาน) -->
+            <div class="flex border-b mb-4">
+                <button onclick="switchAdminTab('products')" id="tab-btn-products" class="flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600">📦 จัดการสินค้า</button>
+                <button onclick="switchAdminTab('staff')" id="tab-btn-staff" class="flex-1 pb-2 font-bold text-gray-400">👥 ฐานข้อมูลพนักงาน</button>
+            </div>
+
+            <!-- ส่วนที่ 1: จัดการสินค้า -->
+            <div id="admin-section-products">
+                <div class="bg-purple-50 p-4 rounded-xl mb-4 border border-purple-100">
+                    <h3 class="font-bold text-sm mb-2 text-purple-800">เพิ่มสินค้าใหม่</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <input type="text" id="new-p-name" placeholder="ชื่อสินค้า" class="px-3 py-2 rounded border text-sm">
+                        <input type="number" id="new-p-price" placeholder="ราคา (บาท)" class="px-3 py-2 rounded border text-sm">
+                        <select id="new-p-category" class="px-3 py-2 rounded border text-sm col-span-2">
+                            <option value="snack">หมวดหมู่: อาหาร/ขนม</option>
+                            <option value="water">หมวดหมู่: น้ำเปล่า</option>
+                            <option value="softdrink">หมวดหมู่: น้ำอัดลม</option>
+                            <option value="alcohol">หมวดหมู่: แอลกอฮอล์</option>
+                        </select>
+                    </div>
+                    <button onclick="addNewProduct()" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มสินค้า</button>
                 </div>
-                <button onclick="addNewProduct()" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มเข้าสู่ระบบ</button>
+                <h3 class="font-bold text-sm mb-2 text-gray-700">สินค้าที่มีในระบบ:</h3>
+                <div id="admin-product-list" class="space-y-2"></div>
             </div>
-            <h3 class="font-bold text-sm mb-2">สินค้าที่มีในระบบ:</h3>
-            <div id="admin-product-list" class="space-y-2"></div>
+
+            <!-- ส่วนที่ 2: จัดการพนักงาน (เพิ่มใหม่) -->
+            <div id="admin-section-staff" class="hidden">
+                <div class="bg-blue-50 p-4 rounded-xl mb-4 border border-blue-100">
+                    <h3 class="font-bold text-sm mb-2 text-blue-800">เพิ่มพนักงานใหม่</h3>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <input type="text" id="new-s-name" placeholder="ชื่อพนักงาน" class="px-3 py-2 rounded border text-sm">
+                        <input type="text" id="new-s-pin" maxlength="4" placeholder="รหัส PIN 4 หลัก" class="px-3 py-2 rounded border text-sm">
+                        <select id="new-s-role" class="px-3 py-2 rounded border text-sm col-span-2">
+                            <option value="staff">สิทธิ์: พนักงานหน้าร้าน (Staff)</option>
+                            <option value="admin">สิทธิ์: เจ้าของร้าน (Admin)</option>
+                        </select>
+                    </div>
+                    <button onclick="addNewStaff()" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มพนักงาน</button>
+                </div>
+                <h3 class="font-bold text-sm mb-2 text-gray-700">รายชื่อพนักงานทั้งหมดในระบบ:</h3>
+                <div id="admin-staff-list" class="space-y-2"></div>
+            </div>
         </div>
     </div>
 
