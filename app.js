@@ -15,7 +15,7 @@ const db = firebase.firestore();
 
 const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
-const PROMPTPAY_NUMBER = "0812345678"; 
+const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ อย่าลืมเปลี่ยนเป็นเบอร์พร้อมเพย์รับเงินของร้าน
 
 const TABLES = [
     { id: "N1", type: "NORMAL", name: "โต๊ะ 1" }, { id: "N2", type: "NORMAL", name: "โต๊ะ 2" },
@@ -39,12 +39,11 @@ const activeTables = {};
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 
 // =========================================================
-// 3. ฟังก์ชันตรวจสอบและสร้างข้อมูลพนักงานเริ่มต้น (Seed Default Staff)
+// 3. ฟังก์ชันตรวจสอบและสร้างข้อมูลพนักงานเริ่มต้น
 // =========================================================
 async function initializeDefaultStaff() {
     const staffSnapshot = await db.collection("staff").get();
     if (staffSnapshot.empty) {
-        // หากฐานข้อมูลยังว่างอยู่ ให้สร้างพนักงานและแอดมินเริ่มต้นให้อัตโนมัติ
         await db.collection("staff").doc("1234").set({ id: "S01", name: "พนักงาน 1", pin: "1234", role: "staff" });
         await db.collection("staff").doc("9999").set({ id: "A01", name: "เจ้าของร้าน", pin: "9999", role: "admin" });
         console.log("สร้างฐานข้อมูลพนักงานเริ่มต้นเรียบร้อย");
@@ -52,7 +51,6 @@ async function initializeDefaultStaff() {
 }
 initializeDefaultStaff();
 
-// ระบบความจำเครื่อง (สำหรับโต๊ะและสินค้า)
 function saveDataLocally() {
     localStorage.setItem("dumras_tables", JSON.stringify(activeTables));
     localStorage.setItem("dumras_products", JSON.stringify(PRODUCTS));
@@ -74,7 +72,7 @@ function loadDataLocally() {
 loadDataLocally();
 
 // =========================================================
-// 4. ระบบ Login ผ่านฐานข้อมูล Firebase Firestore
+// 4. ระบบ Login
 // =========================================================
 function pressPin(num) {
     if (currentPin.length < 4) {
@@ -90,9 +88,7 @@ function updatePinUI() {
 
 async function checkLogin() {
     try {
-        // ค้นหารหัส PIN ใน Firestore คอลเลกชัน staff
         const querySnapshot = await db.collection("staff").where("pin", "==", currentPin).get();
-        
         if (!querySnapshot.empty) {
             const staffData = querySnapshot.docs[0].data();
             currentStaff = staffData;
@@ -129,7 +125,7 @@ function logout() {
 }
 
 // =========================================================
-// 5. ฟังก์ชันจัดการโต๊ะ และ สั่งของ (เหมือนเดิม)
+// 5. ฟังก์ชันจัดการโต๊ะ และ สั่งของ
 // =========================================================
 function renderTables() {
     const normalContainer = document.getElementById("normal-tables-container");
@@ -254,7 +250,7 @@ function addNewProduct() {
     renderAdminProductList();
 }
 
-// ฟังก์ชันจัดการรายชื่อพนักงานดึงจาก Firestore
+// ----------------- ส่วนจัดการพนักงาน (เพิ่ม/ลบ) -----------------
 async function renderAdminStaffList() {
     const listDiv = document.getElementById("admin-staff-list");
     listDiv.innerHTML = '<p class="text-gray-400 text-sm">กำลังโหลด...</p>';
@@ -264,15 +260,25 @@ async function renderAdminStaffList() {
         let html = "";
         snapshot.forEach(doc => {
             const s = doc.data();
+            const pinId = doc.id;
+            
+            // ป้องกันไม่ให้ลบ PIN ของเจ้าของร้านหลัก (9999) เพื่อความปลอดภัย
+            const deleteButton = pinId !== "9999" 
+                ? `<button onclick="deleteStaff('${pinId}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1 rounded-lg text-xs font-medium transition">ลบ</button>` 
+                : `<span class="text-[10px] text-gray-400 px-2 py-1">(บัญชีหลัก)</span>`;
+
             html += `
-                <div class="flex justify-between items-center bg-white border p-2.5 rounded-xl">
+                <div class="flex justify-between items-center bg-white border p-2.5 rounded-xl shadow-sm">
                     <div>
                         <span class="font-bold text-sm text-gray-800">${s.name}</span>
                         <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-2">PIN: ${s.pin}</span>
                     </div>
-                    <span class="text-xs font-bold px-2.5 py-1 rounded-full ${s.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
-                        ${s.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}
-                    </span>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold px-2.5 py-1 rounded-full ${s.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
+                            ${s.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}
+                        </span>
+                        ${deleteButton}
+                    </div>
                 </div>
             `;
         });
@@ -293,7 +299,6 @@ async function addNewStaff() {
     }
 
     try {
-        // เช็คว่า PIN นี้ซ้ำไหม
         const checkPin = await db.collection("staff").where("pin", "==", pin).get();
         if(!checkPin.empty) {
             alert("รหัส PIN นี้มีผู้ใช้งานแล้ว กรุณาใช้รหัสอื่น");
@@ -317,8 +322,20 @@ async function addNewStaff() {
     }
 }
 
+async function deleteStaff(pin) {
+    if(confirm("คุณต้องการลบพนักงานคนนี้ออกจากระบบใช่หรือไม่?")) {
+        try {
+            await db.collection("staff").doc(pin).delete();
+            alert("ลบพนักงานสำเร็จ!");
+            renderAdminStaffList();
+        } catch(e) {
+            alert("เกิดข้อผิดพลาดในการลบพนักงาน");
+        }
+    }
+}
+
 // =========================================================
-// 7. ชำระเงิน บันทึกข้อมูล และแจ้งเตือน OneSignal (เหมือนเดิม)
+// 7. ชำระเงิน บันทึกข้อมูล และแจ้งเตือน OneSignal
 // =========================================================
 function openCheckoutModal(tableId, tableName, tableType) {
     const tableData = activeTables[tableId];
