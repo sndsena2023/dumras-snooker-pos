@@ -15,15 +15,7 @@ const db = firebase.firestore();
 
 const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
-const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์รับเงินของร้าน
-
-// =========================================================
-// 2. ข้อมูลตั้งต้น
-// =========================================================
-const STAFF_DB = {
-    "1234": { id: "S01", name: "พนักงาน 1", role: "staff" },
-    "9999": { id: "A01", name: "เจ้าของร้าน", role: "admin" }
-};
+const PROMPTPAY_NUMBER = "0812345678"; 
 
 const TABLES = [
     { id: "N1", type: "NORMAL", name: "โต๊ะ 1" }, { id: "N2", type: "NORMAL", name: "โต๊ะ 2" },
@@ -47,8 +39,20 @@ const activeTables = {};
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 
 // =========================================================
-// 3. ระบบความจำ (ป้องกันข้อมูลหายเมื่อรีเฟรช)
+// 3. ฟังก์ชันตรวจสอบและสร้างข้อมูลพนักงานเริ่มต้น (Seed Default Staff)
 // =========================================================
+async function initializeDefaultStaff() {
+    const staffSnapshot = await db.collection("staff").get();
+    if (staffSnapshot.empty) {
+        // หากฐานข้อมูลยังว่างอยู่ ให้สร้างพนักงานและแอดมินเริ่มต้นให้อัตโนมัติ
+        await db.collection("staff").doc("1234").set({ id: "S01", name: "พนักงาน 1", pin: "1234", role: "staff" });
+        await db.collection("staff").doc("9999").set({ id: "A01", name: "เจ้าของร้าน", pin: "9999", role: "admin" });
+        console.log("สร้างฐานข้อมูลพนักงานเริ่มต้นเรียบร้อย");
+    }
+}
+initializeDefaultStaff();
+
+// ระบบความจำเครื่อง (สำหรับโต๊ะและสินค้า)
 function saveDataLocally() {
     localStorage.setItem("dumras_tables", JSON.stringify(activeTables));
     localStorage.setItem("dumras_products", JSON.stringify(PRODUCTS));
@@ -70,7 +74,7 @@ function loadDataLocally() {
 loadDataLocally();
 
 // =========================================================
-// 4. ฟังก์ชัน Login
+// 4. ระบบ Login ผ่านฐานข้อมูล Firebase Firestore
 // =========================================================
 function pressPin(num) {
     if (currentPin.length < 4) {
@@ -83,30 +87,41 @@ function clearPin() { currentPin = ""; updatePinUI(); document.getElementById("p
 function updatePinUI() {
     for (let i = 1; i <= 4; i++) document.getElementById(`pin-${i}`).className = (i <= currentPin.length) ? "dot active" : "dot";
 }
-function checkLogin() {
-    const staff = STAFF_DB[currentPin];
-    if (staff) {
-        currentStaff = staff;
-        document.getElementById("current-staff-name").innerText = `${staff.name}`;
-        
-        // จัดการสิทธิ์การมองเห็นปุ่ม
-        if (staff.role === "admin") {
-            document.getElementById("btn-admin-manage").classList.remove("hidden");
-            document.getElementById("btn-admin-report").classList.remove("hidden");
-        } else {
-            document.getElementById("btn-admin-manage").classList.add("hidden");
-            document.getElementById("btn-admin-report").classList.add("hidden");
-        }
 
-        document.getElementById("login-screen").classList.add("hidden");
-        document.getElementById("dashboard-screen").classList.remove("hidden");
-        clearPin();
-        renderTables();
-    } else {
-        document.getElementById("pin-error").innerText = "รหัสไม่ถูกต้อง";
-        setTimeout(clearPin, 800);
+async function checkLogin() {
+    try {
+        // ค้นหารหัส PIN ใน Firestore คอลเลกชัน staff
+        const querySnapshot = await db.collection("staff").where("pin", "==", currentPin).get();
+        
+        if (!querySnapshot.empty) {
+            const staffData = querySnapshot.docs[0].data();
+            currentStaff = staffData;
+            
+            document.getElementById("current-staff-name").innerText = `${staffData.name}`;
+            
+            if (staffData.role === "admin") {
+                document.getElementById("btn-admin-manage").classList.remove("hidden");
+                document.getElementById("btn-admin-report").classList.remove("hidden");
+            } else {
+                document.getElementById("btn-admin-manage").classList.add("hidden");
+                document.getElementById("btn-admin-report").classList.add("hidden");
+            }
+
+            document.getElementById("login-screen").classList.add("hidden");
+            document.getElementById("dashboard-screen").classList.remove("hidden");
+            clearPin();
+            renderTables();
+        } else {
+            document.getElementById("pin-error").innerText = "รหัส PIN ไม่ถูกต้อง";
+            setTimeout(clearPin, 800);
+        }
+    } catch (error) {
+        console.error("Login error:", error);
+        document.getElementById("pin-error").innerText = "เกิดข้อผิดพลาดในการเชื่อมต่อ";
+        setTimeout(clearPin, 1000);
     }
 }
+
 function logout() {
     currentStaff = null;
     document.getElementById("dashboard-screen").classList.add("hidden");
@@ -114,7 +129,7 @@ function logout() {
 }
 
 // =========================================================
-// 5. ฟังก์ชันจัดการโต๊ะ และ สั่งของ
+// 5. ฟังก์ชันจัดการโต๊ะ และ สั่งของ (เหมือนเดิม)
 // =========================================================
 function renderTables() {
     const normalContainer = document.getElementById("normal-tables-container");
@@ -193,33 +208,123 @@ function renderCurrentOrders() {
 }
 
 // =========================================================
-// 6. จัดการสินค้า (เฉพาะ Admin)
+// 6. จัดการสินค้า และ จัดการพนักงาน (Admin Panel)
 // =========================================================
-function openProductManager() { document.getElementById("product-modal").classList.remove("hidden"); renderAdminProductList(); }
-function closeProductManager() { document.getElementById("product-modal").classList.add("hidden"); }
-function renderAdminProductList() {
-    document.getElementById("admin-product-list").innerHTML = PRODUCTS.map(p => `<div class="flex justify-between items-center bg-white border p-2 rounded"><div><span class="font-bold text-sm">${p.name}</span><span class="text-xs text-gray-400 ml-2">(${p.category})</span></div><div class="text-sm font-bold text-purple-600">฿${p.price}</div></div>`).join("");
+function switchAdminTab(tab) {
+    const prodSec = document.getElementById("admin-section-products");
+    const staffSec = document.getElementById("admin-section-staff");
+    const prodBtn = document.getElementById("tab-btn-products");
+    const staffBtn = document.getElementById("tab-btn-staff");
+
+    if(tab === 'products') {
+        prodSec.classList.remove("hidden"); staffSec.classList.add("hidden");
+        prodBtn.className = "flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600";
+        staffBtn.className = "flex-1 pb-2 font-bold text-gray-400";
+    } else {
+        prodSec.classList.add("hidden"); staffSec.classList.remove("hidden");
+        staffBtn.className = "flex-1 pb-2 font-bold text-blue-600 border-b-2 border-blue-600";
+        prodBtn.className = "flex-1 pb-2 font-bold text-gray-400";
+        renderAdminStaffList();
+    }
 }
+
+function openProductManager() { 
+    document.getElementById("product-modal").classList.remove("hidden"); 
+    renderAdminProductList(); 
+}
+function closeProductManager() { document.getElementById("product-modal").classList.add("hidden"); }
+
+function renderAdminProductList() {
+    document.getElementById("admin-product-list").innerHTML = PRODUCTS.map(p => `
+        <div class="flex justify-between items-center bg-white border p-2 rounded">
+            <div><span class="font-bold text-sm">${p.name}</span><span class="text-xs text-gray-400 ml-2">(${p.category})</span></div>
+            <div class="text-sm font-bold text-purple-600">฿${p.price}</div>
+        </div>
+    `).join("");
+}
+
 function addNewProduct() {
     const name = document.getElementById("new-p-name").value;
     const price = parseInt(document.getElementById("new-p-price").value);
     const category = document.getElementById("new-p-category").value;
     if (!name || isNaN(price)) { alert("ข้อมูลไม่ถูกต้อง"); return; }
     PRODUCTS.push({ id: 'p' + (PRODUCTS.length + 1), name: name, price: price, category: category });
-    
     saveDataLocally(); 
     document.getElementById("new-p-name").value = ""; document.getElementById("new-p-price").value = "";
     renderAdminProductList();
 }
 
+// ฟังก์ชันจัดการรายชื่อพนักงานดึงจาก Firestore
+async function renderAdminStaffList() {
+    const listDiv = document.getElementById("admin-staff-list");
+    listDiv.innerHTML = '<p class="text-gray-400 text-sm">กำลังโหลด...</p>';
+    
+    try {
+        const snapshot = await db.collection("staff").get();
+        let html = "";
+        snapshot.forEach(doc => {
+            const s = doc.data();
+            html += `
+                <div class="flex justify-between items-center bg-white border p-2.5 rounded-xl">
+                    <div>
+                        <span class="font-bold text-sm text-gray-800">${s.name}</span>
+                        <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-2">PIN: ${s.pin}</span>
+                    </div>
+                    <span class="text-xs font-bold px-2.5 py-1 rounded-full ${s.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">
+                        ${s.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}
+                    </span>
+                </div>
+            `;
+        });
+        listDiv.innerHTML = html;
+    } catch(e) {
+        listDiv.innerHTML = '<p class="text-red-500 text-sm">โหลดข้อมูลไม่สำเร็จ</p>';
+    }
+}
+
+async function addNewStaff() {
+    const name = document.getElementById("new-s-name").value.trim();
+    const pin = document.getElementById("new-s-pin").value.trim();
+    const role = document.getElementById("new-s-role").value;
+
+    if (!name || pin.length !== 4 || isNaN(pin)) {
+        alert("กรุณากรอกชื่อและรหัส PIN 4 หลักให้ถูกต้อง");
+        return;
+    }
+
+    try {
+        // เช็คว่า PIN นี้ซ้ำไหม
+        const checkPin = await db.collection("staff").where("pin", "==", pin).get();
+        if(!checkPin.empty) {
+            alert("รหัส PIN นี้มีผู้ใช้งานแล้ว กรุณาใช้รหัสอื่น");
+            return;
+        }
+
+        const staffId = 'S' + Math.floor(10 + Math.random() * 90);
+        await db.collection("staff").doc(pin).set({
+            id: staffId,
+            name: name,
+            pin: pin,
+            role: role
+        });
+
+        document.getElementById("new-s-name").value = "";
+        document.getElementById("new-s-pin").value = "";
+        alert("เพิ่มพนักงานสำเร็จ!");
+        renderAdminStaffList();
+    } catch(e) {
+        alert("เกิดข้อผิดพลาดในการบันทึก");
+    }
+}
+
 // =========================================================
-// 7. ชำระเงิน บันทึกข้อมูล และแจ้งเตือน OneSignal
+// 7. ชำระเงิน บันทึกข้อมูล และแจ้งเตือน OneSignal (เหมือนเดิม)
 // =========================================================
 function openCheckoutModal(tableId, tableName, tableType) {
     const tableData = activeTables[tableId];
     const msPlayed = Math.abs(new Date() - tableData.startTime);
     let hoursPlayed = msPlayed / 36e5;
-    if(hoursPlayed < 0.1) hoursPlayed = 1; // กันบั๊กเพิ่งเปิดโต๊ะ
+    if(hoursPlayed < 0.1) hoursPlayed = 1; 
     
     const timeFee = Math.ceil(hoursPlayed * RATES[tableType]);
     let itemsFee = 0;
@@ -313,9 +418,8 @@ function closeReceiptModal() { pendingCheckoutData = null; document.getElementBy
 // =========================================================
 function openReportModal() {
     document.getElementById("report-modal").classList.remove("hidden");
-    document.getElementById("report-content").innerHTML = '<p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูลจากฐานข้อมูล...</p>';
+    document.getElementById("report-content").innerHTML = '<p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูล...</p>';
     
-    // ตั้งค่าเวลาเริ่มต้นของวันนี้ (เที่ยงคืน)
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
@@ -353,7 +457,7 @@ function openReportModal() {
               billsHtml = '<p class="text-center text-gray-400 py-6">ยังไม่มีรายการขายในวันนี้</p>';
           }
 
-          const summaryHtml = `
+          document.getElementById("report-content").innerHTML = `
             <div class="grid grid-cols-2 gap-4 mb-4 mt-2">
                 <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
                     <div class="text-xs text-green-600 font-bold mb-1">💵 รวมเงินสด</div>
@@ -369,16 +473,12 @@ function openReportModal() {
                 <div class="text-4xl font-bold text-yellow-400">฿${totalGrand}</div>
             </div>
             <h3 class="font-bold text-gray-700 mb-2 border-b pb-2">📋 ประวัติบิลวันนี้:</h3>
-            <div class="space-y-1">
-                ${billsHtml}
-            </div>
+            <div class="space-y-1">${billsHtml}</div>
           `;
-          
-          document.getElementById("report-content").innerHTML = summaryHtml;
       })
       .catch((error) => {
-          console.error("Error getting documents: ", error);
-          document.getElementById("report-content").innerHTML = '<p class="text-center text-red-500 py-10">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่</p>';
+          console.error("Error: ", error);
+          document.getElementById("report-content").innerHTML = '<p class="text-center text-red-500 py-10">เกิดข้อผิดพลาดในการโหลดข้อมูล</p>';
       });
 }
 
