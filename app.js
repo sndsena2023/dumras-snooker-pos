@@ -67,7 +67,7 @@ function loadDataLocally() {
         }
     }
 }
-loadDataLocally(); // โหลดข้อมูลทันทีที่เปิดแอป
+loadDataLocally();
 
 // =========================================================
 // 4. ฟังก์ชัน Login
@@ -88,7 +88,16 @@ function checkLogin() {
     if (staff) {
         currentStaff = staff;
         document.getElementById("current-staff-name").innerText = `${staff.name}`;
-        document.getElementById("btn-admin-manage").className = staff.role === "admin" ? "bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200" : "hidden";
+        
+        // จัดการสิทธิ์การมองเห็นปุ่ม
+        if (staff.role === "admin") {
+            document.getElementById("btn-admin-manage").classList.remove("hidden");
+            document.getElementById("btn-admin-report").classList.remove("hidden");
+        } else {
+            document.getElementById("btn-admin-manage").classList.add("hidden");
+            document.getElementById("btn-admin-report").classList.add("hidden");
+        }
+
         document.getElementById("login-screen").classList.add("hidden");
         document.getElementById("dashboard-screen").classList.remove("hidden");
         clearPin();
@@ -159,7 +168,7 @@ function openOrderModal(tableId, tableName) {
     document.getElementById("order-modal-title").innerText = `สั่งของเข้า ${tableName}`;
     document.getElementById("order-modal").classList.remove("hidden");
     document.getElementById("order-product-list").innerHTML = PRODUCTS.map(p => `
-        <button onclick="addItemToTable('${p.id}')" class="border p-2 rounded-xl text-left bg-white shadow-sm">
+        <button onclick="addItemToTable('${p.id}')" class="border p-2 rounded-xl text-left bg-white shadow-sm hover:border-blue-500 transition">
             <div class="font-bold text-sm">${p.name}</div><div class="text-xs text-gray-500">฿${p.price}</div>
         </button>
     `).join("");
@@ -199,7 +208,6 @@ function addNewProduct() {
     PRODUCTS.push({ id: 'p' + (PRODUCTS.length + 1), name: name, price: price, category: category });
     
     saveDataLocally(); 
-
     document.getElementById("new-p-name").value = ""; document.getElementById("new-p-price").value = "";
     renderAdminProductList();
 }
@@ -299,3 +307,81 @@ function saveReceiptImage() {
     });
 }
 function closeReceiptModal() { pendingCheckoutData = null; document.getElementById("receipt-modal").classList.add("hidden"); }
+
+// =========================================================
+// 8. ระบบรายงานยอดขาย (เฉพาะ Admin)
+// =========================================================
+function openReportModal() {
+    document.getElementById("report-modal").classList.remove("hidden");
+    document.getElementById("report-content").innerHTML = '<p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูลจากฐานข้อมูล...</p>';
+    
+    // ตั้งค่าเวลาเริ่มต้นของวันนี้ (เที่ยงคืน)
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
+    db.collection("transactions")
+      .where("timestamp", ">=", startOfToday)
+      .orderBy("timestamp", "desc")
+      .get()
+      .then((querySnapshot) => {
+          let totalGrand = 0, totalCash = 0, totalTransfer = 0;
+          let billsHtml = '';
+
+          querySnapshot.forEach((doc) => {
+              const data = doc.data();
+              totalGrand += data.grandTotal;
+              if(data.method === 'เงินสด') totalCash += data.grandTotal;
+              if(data.method === 'เงินโอน') totalTransfer += data.grandTotal;
+              
+              const timeString = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '-';
+              
+              billsHtml += `
+                <div class="flex justify-between items-center border-b border-gray-100 py-3 text-sm">
+                    <div>
+                        <div class="font-bold text-gray-700">${data.tableName}</div>
+                        <div class="text-gray-400 text-xs">พนักงาน: ${data.staffName} • ${timeString}</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="font-bold text-gray-800 text-lg">฿${data.grandTotal}</div>
+                        <div class="text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mt-1 ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div>
+                    </div>
+                </div>
+              `;
+          });
+
+          if(querySnapshot.empty) {
+              billsHtml = '<p class="text-center text-gray-400 py-6">ยังไม่มีรายการขายในวันนี้</p>';
+          }
+
+          const summaryHtml = `
+            <div class="grid grid-cols-2 gap-4 mb-4 mt-2">
+                <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
+                    <div class="text-xs text-green-600 font-bold mb-1">💵 รวมเงินสด</div>
+                    <div class="text-xl font-bold text-green-700">฿${totalCash}</div>
+                </div>
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center shadow-sm">
+                    <div class="text-xs text-blue-600 font-bold mb-1">📱 รวมเงินโอน</div>
+                    <div class="text-xl font-bold text-blue-700">฿${totalTransfer}</div>
+                </div>
+            </div>
+            <div class="bg-gray-800 text-white p-4 rounded-xl text-center mb-6 shadow-md">
+                <div class="text-xs text-gray-300 mb-1">💰 ยอดขายรวมทั้งสิ้น (วันนี้)</div>
+                <div class="text-4xl font-bold text-yellow-400">฿${totalGrand}</div>
+            </div>
+            <h3 class="font-bold text-gray-700 mb-2 border-b pb-2">📋 ประวัติบิลวันนี้:</h3>
+            <div class="space-y-1">
+                ${billsHtml}
+            </div>
+          `;
+          
+          document.getElementById("report-content").innerHTML = summaryHtml;
+      })
+      .catch((error) => {
+          console.error("Error getting documents: ", error);
+          document.getElementById("report-content").innerHTML = '<p class="text-center text-red-500 py-10">เกิดข้อผิดพลาดในการโหลดข้อมูล กรุณาลองใหม่</p>';
+      });
+}
+
+function closeReportModal() {
+    document.getElementById("report-modal").classList.add("hidden");
+}
