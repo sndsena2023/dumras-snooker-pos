@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ดำรัส สนุ๊กเกอร์ POS</title>
     
-    <!-- ระบบ PWA และการตั้งค่าหน้าจอสำหรับมือถือ/iPad -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#3b82f6">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,18 +12,11 @@
     <meta name="apple-mobile-web-app-title" content="DumrasPOS">
     <link rel="apple-touch-icon" href="icon-192.png">
 
-    <!-- ดึง Tailwind CSS และ Font -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    
-    <!-- เครื่องมือแปลง HTML เป็นรูปภาพ -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    
-    <!-- ดึง Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
-
-    <!-- ระบบแจ้งเตือน OneSignal -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -81,17 +73,20 @@
     <!-- ================= หน้าจอ DASHBOARD (หลัก) ================= -->
     <div id="dashboard-screen" class="hidden h-screen overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-200 pb-10">
         <div class="bg-white shadow-sm sticky top-0 z-10">
-            <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
-                <div class="flex items-center gap-3">
+            <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
+                <div class="flex items-center gap-3 w-full sm:w-auto">
                     <div class="text-3xl">🎱</div>
                     <h1 class="text-xl font-bold text-gray-800">ดำรัส สนุ๊กเกอร์ POS</h1>
                 </div>
-                <div class="flex items-center gap-4">
-                    <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200">⚙️ จัดการสินค้า</button>
-                    <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium">
+                <div class="flex items-center gap-2 sm:gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+                    <!-- ปุ่มสำหรับ Admin -->
+                    <button id="btn-admin-report" onclick="openReportModal()" class="hidden bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 shrink-0">📊 ยอดขายวันนี้</button>
+                    <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200 shrink-0">⚙️ จัดการสินค้า</button>
+                    
+                    <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium shrink-0">
                         <span id="current-staff-name">...</span>
                     </div>
-                    <button onclick="logout()" class="text-red-500 hover:text-red-700 text-sm font-medium">ออกระบบ</button>
+                    <button onclick="logout()" class="text-red-500 hover:text-red-700 text-sm font-medium shrink-0">ออกระบบ</button>
                 </div>
             </div>
         </div>
@@ -108,8 +103,22 @@
         </div>
     </div>
 
+    <!-- ================= POPUP: รายงานยอดขาย (เพิ่มใหม่) ================= -->
+    <div id="report-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h2 class="text-xl font-bold text-green-700">📊 สรุปยอดขายวันนี้</h2>
+                <button onclick="closeReportModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
+            </div>
+            <!-- เนื้อหารายงานจะถูกใส่ตรงนี้โดย JS -->
+            <div id="report-content" class="flex-1 overflow-y-auto pr-2">
+                <p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูล...</p>
+            </div>
+        </div>
+    </div>
+
     <!-- ================= POPUP: สั่งของ ================= -->
-    <div id="order-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+    <div id="order-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold" id="order-modal-title">สั่งของเข้าโต๊ะ</h2>
@@ -122,7 +131,7 @@
     </div>
 
     <!-- ================= POPUP: จัดการสินค้า ================= -->
-    <div id="product-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
+    <div id="product-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-xl font-bold text-purple-700">⚙️ จัดการราคาสินค้า</h2>
@@ -148,7 +157,7 @@
     </div>
 
     <!-- ================= POPUP: สรุปยอดก่อนจ่าย ================= -->
-    <div id="checkout-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center">
+    <div id="checkout-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
             <div class="flex justify-between items-center mb-4">
                 <h2 class="text-2xl font-bold text-gray-800">💸 สรุปยอดชำระเงิน</h2>
@@ -183,7 +192,6 @@
     <!-- ================= POPUP: ใบเสร็จรับเงิน & QR Code ================= -->
     <div id="receipt-modal" class="hidden fixed inset-0 z-[70] bg-black bg-opacity-80 flex flex-col items-center justify-center py-6 overflow-y-auto">
         
-        <!-- ตัวใบเสร็จที่จะถูกเซฟเป็นรูป -->
         <div id="receipt-paper" class="receipt-zigzag w-80 p-6 text-gray-800 text-sm shadow-2xl rounded-t-lg mb-4 shrink-0">
             <div class="text-center mb-4">
                 <div class="text-4xl mb-1">🎱</div>
@@ -221,14 +229,12 @@
             <p class="text-center font-medium text-xs text-gray-500 mt-6">ขอบคุณที่ใช้บริการค่ะ 🙏<br>โอกาสหน้าเชิญใหม่นะคะ</p>
         </div>
 
-        <!-- กล่องแสดง QR Code (ซ่อนจากใบเสร็จ) -->
         <div id="qr-payment-section" class="hidden flex-col items-center bg-white p-4 rounded-xl shadow-lg mb-6 shrink-0 w-80 text-center">
             <h3 class="font-bold text-blue-700 mb-2">📱 สแกนจ่ายผ่านพร้อมเพย์</h3>
             <img id="qr-image" src="" alt="QR Code" class="w-40 h-40 object-cover border-2 border-blue-100 rounded-lg mx-auto">
             <p class="text-sm text-gray-600 mt-2">ยอดชำระ: <span class="font-bold text-lg text-blue-600">฿<span id="qr-total-display"></span></span></p>
         </div>
 
-        <!-- ปุ่มควบคุม -->
         <div class="flex gap-4 shrink-0 pb-10">
             <button onclick="saveReceiptImage()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-full shadow-lg flex items-center gap-2">
                 📸 บันทึกรูปลงเครื่อง
