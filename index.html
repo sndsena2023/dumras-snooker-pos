@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ดำรัส สนุ๊กเกอร์ POS</title>
     
+    <!-- ระบบ PWA และการตั้งค่าหน้าจอสำหรับมือถือ/iPad -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DumrasPOS">
+    <link rel="apple-touch-icon" href="icon-192.png">
+
     <!-- ดึง Tailwind CSS และ Font -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -43,7 +51,7 @@
 </head>
 <body class="text-gray-800 h-screen w-screen overflow-hidden">
 
-    <!-- ================= 1. หน้าจอ LOGIN ================= -->
+    <!-- ================= หน้าจอ LOGIN ================= -->
     <div id="login-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
         <div class="glass-panel p-8 rounded-3xl shadow-xl w-80 text-center border border-white">
             <div class="text-4xl mb-2">🎱</div>
@@ -70,7 +78,7 @@
         </div>
     </div>
 
-    <!-- ================= 2. หน้าจอ DASHBOARD (หลัก) ================= -->
+    <!-- ================= หน้าจอ DASHBOARD (หลัก) ================= -->
     <div id="dashboard-screen" class="hidden h-screen overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-200 pb-10">
         <div class="bg-white shadow-sm sticky top-0 z-10">
             <div class="max-w-6xl mx-auto px-6 py-4 flex justify-between items-center">
@@ -100,7 +108,7 @@
         </div>
     </div>
 
-    <!-- ================= 3. POPUP: สั่งของ ================= -->
+    <!-- ================= POPUP: สั่งของ ================= -->
     <div id="order-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
@@ -113,7 +121,7 @@
         </div>
     </div>
 
-    <!-- ================= 4. POPUP: จัดการสินค้า ================= -->
+    <!-- ================= POPUP: จัดการสินค้า ================= -->
     <div id="product-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
@@ -139,7 +147,7 @@
         </div>
     </div>
 
-    <!-- ================= 5. POPUP: สรุปยอดก่อนจ่าย ================= -->
+    <!-- ================= POPUP: สรุปยอดก่อนจ่าย ================= -->
     <div id="checkout-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center">
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
             <div class="flex justify-between items-center mb-4">
@@ -172,7 +180,7 @@
         </div>
     </div>
 
-    <!-- ================= 6. POPUP: ใบเสร็จรับเงิน & QR Code ================= -->
+    <!-- ================= POPUP: ใบเสร็จรับเงิน & QR Code ================= -->
     <div id="receipt-modal" class="hidden fixed inset-0 z-[70] bg-black bg-opacity-80 flex flex-col items-center justify-center py-6 overflow-y-auto">
         
         <!-- ตัวใบเสร็จที่จะถูกเซฟเป็นรูป -->

@@ -1,5 +1,5 @@
 // =========================================================
-// 1. ตั้งค่าเชื่อมต่อระบบ (ใส่ข้อมูลจริงของคุณแล้ว)
+// 1. ตั้งค่าเชื่อมต่อระบบ
 // =========================================================
 const firebaseConfig = {
     apiKey: "AIzaSyD3_M85acXiPsrDNzvzHOPPW9cjRsL2NRk",
@@ -10,14 +10,12 @@ const firebaseConfig = {
     appId: "1:985526889212:web:f4c71ad06b838cf9748579"
 };
 
-// เริ่มต้น Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 
-// ตั้งค่า OneSignal & QR Code
 const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
-const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ อย่าลืมแก้ตรงนี้เป็นเบอร์รับเงินของร้าน
+const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์รับเงินของร้าน
 
 // =========================================================
 // 2. ข้อมูลตั้งต้น
@@ -49,7 +47,30 @@ const activeTables = {};
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 
 // =========================================================
-// 3. ฟังก์ชัน Login
+// 3. ระบบความจำ (ป้องกันข้อมูลหายเมื่อรีเฟรช)
+// =========================================================
+function saveDataLocally() {
+    localStorage.setItem("dumras_tables", JSON.stringify(activeTables));
+    localStorage.setItem("dumras_products", JSON.stringify(PRODUCTS));
+}
+
+function loadDataLocally() {
+    const savedProducts = localStorage.getItem("dumras_products");
+    if (savedProducts) PRODUCTS = JSON.parse(savedProducts);
+
+    const savedTables = localStorage.getItem("dumras_tables");
+    if (savedTables) {
+        const parsedTables = JSON.parse(savedTables);
+        for (let id in parsedTables) {
+            parsedTables[id].startTime = new Date(parsedTables[id].startTime);
+            activeTables[id] = parsedTables[id];
+        }
+    }
+}
+loadDataLocally(); // โหลดข้อมูลทันทีที่เปิดแอป
+
+// =========================================================
+// 4. ฟังก์ชัน Login
 // =========================================================
 function pressPin(num) {
     if (currentPin.length < 4) {
@@ -84,7 +105,7 @@ function logout() {
 }
 
 // =========================================================
-// 4. ฟังก์ชันจัดการโต๊ะ และ สั่งของ
+// 5. ฟังก์ชันจัดการโต๊ะ และ สั่งของ
 // =========================================================
 function renderTables() {
     const normalContainer = document.getElementById("normal-tables-container");
@@ -126,9 +147,13 @@ function renderTables() {
         else vipContainer.innerHTML += cardHTML;
     });
 }
-function startTable(tableId) { activeTables[tableId] = { startTime: new Date(), orders: {} }; renderTables(); }
 
-// ระบบสั่งของ
+function startTable(tableId) { 
+    activeTables[tableId] = { startTime: new Date(), orders: {} }; 
+    saveDataLocally(); 
+    renderTables(); 
+}
+
 function openOrderModal(tableId, tableName) { 
     currentlyOrderingTableId = tableId;
     document.getElementById("order-modal-title").innerText = `สั่งของเข้า ${tableName}`;
@@ -141,13 +166,16 @@ function openOrderModal(tableId, tableName) {
     renderCurrentOrders();
 }
 function closeOrderModal() { document.getElementById("order-modal").classList.add("hidden"); renderTables(); }
+
 function addItemToTable(productId) {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
     const product = PRODUCTS.find(p => p.id === productId);
     if (tableOrders[productId]) tableOrders[productId].qty += 1;
     else tableOrders[productId] = { detail: product, qty: 1 };
+    saveDataLocally();
     renderCurrentOrders();
 }
+
 function renderCurrentOrders() {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
     const items = Object.values(tableOrders);
@@ -156,7 +184,7 @@ function renderCurrentOrders() {
 }
 
 // =========================================================
-// 5. จัดการสินค้า (เฉพาะ Admin)
+// 6. จัดการสินค้า (เฉพาะ Admin)
 // =========================================================
 function openProductManager() { document.getElementById("product-modal").classList.remove("hidden"); renderAdminProductList(); }
 function closeProductManager() { document.getElementById("product-modal").classList.add("hidden"); }
@@ -169,18 +197,21 @@ function addNewProduct() {
     const category = document.getElementById("new-p-category").value;
     if (!name || isNaN(price)) { alert("ข้อมูลไม่ถูกต้อง"); return; }
     PRODUCTS.push({ id: 'p' + (PRODUCTS.length + 1), name: name, price: price, category: category });
+    
+    saveDataLocally(); 
+
     document.getElementById("new-p-name").value = ""; document.getElementById("new-p-price").value = "";
     renderAdminProductList();
 }
 
 // =========================================================
-// 6. ชำระเงิน บันทึกข้อมูล และแจ้งเตือน OneSignal
+// 7. ชำระเงิน บันทึกข้อมูล และแจ้งเตือน OneSignal
 // =========================================================
 function openCheckoutModal(tableId, tableName, tableType) {
     const tableData = activeTables[tableId];
     const msPlayed = Math.abs(new Date() - tableData.startTime);
     let hoursPlayed = msPlayed / 36e5;
-    if(hoursPlayed < 0.5) hoursPlayed = 0.5; // ขั้นต่ำครึ่งชั่วโมง
+    if(hoursPlayed < 0.1) hoursPlayed = 1; // กันบั๊กเพิ่งเปิดโต๊ะ
     
     const timeFee = Math.ceil(hoursPlayed * RATES[tableType]);
     let itemsFee = 0;
@@ -208,7 +239,6 @@ function closeCheckoutModal() { pendingCheckoutData = null; document.getElementB
 function processPayment(method) {
     const data = pendingCheckoutData;
     
-    // สร้างหน้าใบเสร็จ
     document.getElementById("rcpt-table").innerText = data.tableName;
     document.getElementById("rcpt-date").innerText = new Date().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' });
     document.getElementById("rcpt-staff").innerText = currentStaff.name;
@@ -218,7 +248,6 @@ function processPayment(method) {
     `).join("");
     document.getElementById("rcpt-total").innerText = data.grandTotal;
 
-    // ระบบ QR Code
     const qrSection = document.getElementById("qr-payment-section");
     if (method === 'เงินโอน') {
         qrSection.classList.remove("hidden"); qrSection.classList.add("flex");
@@ -228,7 +257,6 @@ function processPayment(method) {
         qrSection.classList.remove("flex"); qrSection.classList.add("hidden");
     }
 
-    // ส่งข้อมูลเข้า Firebase 
     db.collection("transactions").add({
         tableId: data.tableId,
         tableName: data.tableName,
@@ -239,7 +267,6 @@ function processPayment(method) {
         timestamp: firebase.firestore.FieldValue.serverTimestamp(),
         items: data.receiptItems
     }).then(() => {
-        // ยิง OneSignal
         fetch("https://onesignal.com/api/v1/notifications", {
             method: "POST",
             headers: {
@@ -249,15 +276,17 @@ function processPayment(method) {
             body: JSON.stringify({
                 app_id: ONESIGNAL_APP_ID,
                 included_segments: ["Subscribed Users"],
-                headings: { "en": "💰 บิลใหม่ - ดำรัส สนุ๊กเกอร์" },
-                contents: { "en": `โต๊ะ ${data.tableName} | ยอด: ฿${data.grandTotal} | เก็บโดย: ${currentStaff.name} (${method})` }
+                headings: { "en": "💰 บิลใหม่ - ดำรัส สนุ๊กเกอร์", "th": "💰 บิลใหม่ - ดำรัส สนุ๊กเกอร์" },
+                contents: { "en": `โต๊ะ ${data.tableName} | ยอด: ฿${data.grandTotal} | เก็บโดย: ${currentStaff.name} (${method})`, "th": `โต๊ะ ${data.tableName} | ยอด: ฿${data.grandTotal} | เก็บโดย: ${currentStaff.name} (${method})` }
             })
         });
     });
 
     closeCheckoutModal();
     document.getElementById("receipt-modal").classList.remove("hidden");
+    
     delete activeTables[data.tableId];
+    saveDataLocally();
     renderTables();
 }
 
