@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ดำรัส สนุ๊กเกอร์ POS</title>
     
-    <!-- ระบบ PWA และการตั้งค่าหน้าจอสำหรับมือถือ/iPad -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#3b82f6">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -13,26 +12,18 @@
     <meta name="apple-mobile-web-app-title" content="DumrasPOS">
     <link rel="apple-touch-icon" href="icon-192.png">
 
-    <!-- ดึง Tailwind CSS และ Font -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
-    
-    <!-- เครื่องมือแปลง HTML เป็นรูปภาพ (ทำใบเสร็จ) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     
-    <!-- ดึง Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
 
-    <!-- ระบบแจ้งเตือน OneSignal -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
       OneSignalDeferred.push(function(OneSignal) {
-        OneSignal.init({
-          appId: "d69a2e29-6636-4ac6-b7fe-898e3210754f",
-          notifyButton: { enable: true }
-        });
+        OneSignal.init({ appId: "d69a2e29-6636-4ac6-b7fe-898e3210754f", notifyButton: { enable: true } });
       });
     </script>
     
@@ -54,10 +45,7 @@
     <!-- ================= หน้าจอ LOGIN ================= -->
     <div id="login-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
         <div class="glass-panel p-8 rounded-3xl shadow-xl w-80 text-center border border-white">
-            
-            <!-- แก้ไขโลโก้หน้า Login -->
             <img src="icon-512.png" alt="โลโก้ร้าน" class="w-24 h-24 mx-auto mb-4 object-contain drop-shadow-md rounded-2xl">
-            
             <h1 class="text-2xl font-bold text-gray-800 mb-6">ดำรัส สนุ๊กเกอร์</h1>
             <div class="flex justify-center gap-4 mb-8">
                 <div id="pin-1" class="dot"></div><div id="pin-2" class="dot"></div>
@@ -85,21 +73,22 @@
     <div id="dashboard-screen" class="hidden h-screen overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-200 pb-10">
         <div class="bg-white shadow-sm sticky top-0 z-10">
             <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
-                
                 <div class="flex items-center gap-3 w-full sm:w-auto">
-                    <!-- แก้ไขโลโก้แถบเมนูด้านบน -->
                     <img src="icon-512.png" alt="โลโก้ร้าน" class="w-10 h-10 object-contain rounded-lg">
                     <h1 class="text-xl font-bold text-gray-800">ดำรัส สนุ๊กเกอร์ POS</h1>
                 </div>
-
                 <div class="flex items-center gap-2 sm:gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-                    <button id="btn-admin-report" onclick="openReportModal()" class="hidden bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 shrink-0">📊 ยอดขายวันนี้</button>
+                    
+                    <!-- ปุ่มบันทึกรายจ่าย (พนักงานและเจ้าของร้านเห็น) -->
+                    <button onclick="openExpenseModal()" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-red-200 shrink-0">💸 บันทึกรายจ่าย</button>
+                    
+                    <button id="btn-admin-report" onclick="openReportModal()" class="hidden bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 shrink-0">📊 รายงานบัญชี</button>
                     <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200 shrink-0">⚙️ ตั้งค่าร้าน</button>
                     
                     <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium shrink-0">
                         <span id="current-staff-name">...</span>
                     </div>
-                    <button onclick="logout()" class="text-red-500 hover:text-red-700 text-sm font-medium shrink-0">ออกระบบ</button>
+                    <button onclick="logout()" class="text-gray-500 hover:text-red-700 text-sm font-medium shrink-0">ออกระบบ</button>
                 </div>
             </div>
         </div>
@@ -116,14 +105,39 @@
         </div>
     </div>
 
-    <!-- ================= POPUP: รายงานยอดขาย ================= -->
-    <div id="report-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center mb-4 shrink-0">
-                <h2 class="text-xl font-bold text-green-700">📊 สรุปยอดขายวันนี้</h2>
-                <button onclick="closeReportModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
+    <!-- ================= POPUP: บันทึกรายจ่าย ================= -->
+    <div id="expense-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-red-600">💸 บันทึกรายจ่ายร้าน</h2>
+                <button onclick="closeExpenseModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
             </div>
-            <div id="report-content" class="flex-1 overflow-y-auto pr-2">
+            <div class="space-y-4 mb-6">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">รายละเอียดค่าใช้จ่าย</label>
+                    <input type="text" id="expense-desc" placeholder="เช่น ค่าเครื่องดื่ม, ค่าน้ำแข็ง, ค่าไฟ" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">จำนวนเงิน (บาท)</label>
+                    <input type="number" id="expense-amount" placeholder="0" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-lg font-bold text-red-600">
+                </div>
+            </div>
+            <button onclick="saveExpense()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-md transition">บันทึกรายจ่าย</button>
+        </div>
+    </div>
+
+    <!-- ================= POPUP: รายงานบัญชี & ย้อนหลัง ================= -->
+    <div id="report-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-2 sm:p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] flex flex-col">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 shrink-0 gap-3">
+                <h2 class="text-xl font-bold text-gray-800">📊 บัญชีรายรับ-รายจ่าย</h2>
+                <div class="flex items-center gap-2 w-full sm:w-auto">
+                    <label class="text-sm text-gray-600 whitespace-nowrap">ดูข้อมูลวันที่:</label>
+                    <input type="date" id="report-date-picker" onchange="loadReportData()" class="border px-3 py-1.5 rounded-lg text-sm w-full sm:w-auto focus:ring-2 focus:ring-blue-500">
+                    <button onclick="closeReportModal()" class="text-gray-400 hover:text-red-500 text-xl ml-2 shrink-0">✕</button>
+                </div>
+            </div>
+            <div id="report-content" class="flex-1 overflow-y-auto pr-1">
                 <p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูล...</p>
             </div>
         </div>
@@ -230,13 +244,9 @@
 
     <!-- ================= POPUP: ใบเสร็จรับเงิน & QR Code ================= -->
     <div id="receipt-modal" class="hidden fixed inset-0 z-[70] bg-black bg-opacity-80 flex flex-col items-center justify-center py-6 overflow-y-auto">
-        
         <div id="receipt-paper" class="receipt-zigzag w-80 p-6 text-gray-800 text-sm shadow-2xl rounded-t-lg mb-4 shrink-0">
             <div class="text-center mb-4">
-                
-                <!-- แก้ไขโลโก้ในใบเสร็จ (ปรับเป็นสีเทาขาวดำเพื่อให้สมจริงเวลาพิมพ์) -->
                 <img src="icon-512.png" alt="โลโก้ร้าน" class="w-16 h-16 mx-auto mb-2 object-contain grayscale">
-                
                 <h2 class="font-bold text-xl tracking-wide">ดำรัส สนุ๊กเกอร์</h2>
                 <p class="text-xs text-gray-500 mt-1">ใบเสร็จรับเงิน (Receipt)</p>
             </div>
@@ -267,7 +277,6 @@
                     <span class="font-bold text-lg text-gray-900">฿<span id="rcpt-total"></span></span>
                 </div>
             </div>
-            
             <p class="text-center font-medium text-xs text-gray-500 mt-6">ขอบคุณที่ใช้บริการค่ะ 🙏<br>โอกาสหน้าเชิญใหม่นะคะ</p>
         </div>
 
