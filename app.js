@@ -18,10 +18,10 @@ const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv
 const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์ที่นี่
 
 // =========================================================
-// 2. ตั้งค่าการคิดเงินค่าโต๊ะ (คุณสามารถปรับแก้ตรงนี้ได้ตลอดครับ)
+// 2. ตั้งค่าการคิดเงินค่าโต๊ะ
 // =========================================================
 const RATES = { NORMAL: 90, VIP: 120 }; // ราคาต่อชั่วโมง
-const MINIMUM_MINUTES = 30; // ขั้นต่ำกี่นาที (ถ้าลูกค้าเล่นไม่ถึงเวลานี้ จะถูกคิดเงินเท่ากับเวลาขั้นต่ำ)
+const MINIMUM_MINUTES = 30; // ขั้นต่ำกี่นาที
 
 const TABLES = [
     { id: "N1", type: "NORMAL", name: "โต๊ะ 1" }, { id: "N2", type: "NORMAL", name: "โต๊ะ 2" },
@@ -339,26 +339,19 @@ async function addNewStaff() {
 async function deleteStaff(pin) { if(confirm("ลบพนักงานคนนี้?")) { await db.collection("staff").doc(pin).delete(); renderAdminStaffList(); } }
 
 // =========================================================
-// 8. ชำระเงิน และ บิล (แก้ไขให้คิดเงินตามจริงเป็น "นาที")
+// 8. ชำระเงิน และ บิล (คิดเงินตามจริงเป็น "นาที")
 // =========================================================
 function openCheckoutModal(tableId, tableName, tableType) {
     const tableData = activeTables[tableId];
-    
-    // คำนวณเวลาเป็น "นาที"
     const msPlayed = Math.abs(new Date() - tableData.startTime);
     let minutesPlayed = Math.floor(msPlayed / 60000); 
 
-    // เช็คเวลาขั้นต่ำ
-    if (minutesPlayed < MINIMUM_MINUTES) {
-        minutesPlayed = MINIMUM_MINUTES;
-    }
+    if (minutesPlayed < MINIMUM_MINUTES) minutesPlayed = MINIMUM_MINUTES;
     
-    // คำนวณค่าโต๊ะ (คิดตามนาที)
     const ratePerMinute = RATES[tableType] / 60;
-    const timeFee = Math.round(minutesPlayed * ratePerMinute); // ปัดเศษให้เป็นจำนวนเต็มบาท
-    const hoursPlayed = minutesPlayed / 60; // เก็บเป็นชั่วโมงเพื่อลงฐานข้อมูล
+    const timeFee = Math.round(minutesPlayed * ratePerMinute); 
+    const hoursPlayed = minutesPlayed / 60; 
 
-    // จัดเรียงรายการลงใบเสร็จ
     const displayHours = Math.floor(minutesPlayed / 60);
     const displayMins = minutesPlayed % 60;
     const timeString = `${displayHours} ชม. ${displayMins} นาที`;
@@ -414,7 +407,7 @@ function saveReceiptImage() { html2canvas(document.getElementById("receipt-paper
 function closeReceiptModal() { document.getElementById("receipt-modal").classList.add("hidden"); }
 
 // =========================================================
-// 9. ระบบบัญชี และการกดดูรายละเอียดย่อยแบบ Popup / Accordion
+// 9. ระบบบัญชี และการกดดูรายละเอียดย่อยแบบซ่อน
 // =========================================================
 function openReportModal() {
     document.getElementById("report-modal").classList.remove("hidden");
@@ -429,8 +422,9 @@ function openReportModal() {
     loadReportData();
 }
 
+// ฟังก์ชันเปิด/ปิดกล่องข้อมูลเจาะลึก (โต๊ะ และ สินค้า)
 function toggleReportSection(sectionId) {
-    const sections = ['detail-income', 'detail-expense', 'detail-table', 'detail-product'];
+    const sections = ['detail-table', 'detail-product'];
     sections.forEach(id => {
         if (id !== sectionId) {
             const el = document.getElementById(id);
@@ -588,19 +582,19 @@ function loadReportData() {
                     <p class="text-sm text-gray-300 mb-1">ยอดคงเหลือสุทธิ (Net Balance)</p>
                     <p class="text-4xl font-bold ${profitColorClass} mb-4">฿${netProfit.toLocaleString()}</p>
                     <div class="w-full grid grid-cols-2 gap-4 border-t border-gray-600 pt-4 mt-2">
-                        <div class="text-center cursor-pointer hover:bg-gray-700 p-2 rounded-lg transition" onclick="toggleReportSection('detail-income')">
-                            <p class="text-xs text-gray-400 mb-1">รายรับทั้งหมด <span class="text-[10px] text-gray-500">(คลิกดูบิล)</span></p>
+                        <div class="text-center p-2">
+                            <p class="text-xs text-gray-400 mb-1">รายรับทั้งหมด</p>
                             <p class="text-xl font-bold text-green-400">฿${totalIncome.toLocaleString()}</p>
                         </div>
-                        <div class="text-center border-l border-gray-600 cursor-pointer hover:bg-gray-700 p-2 rounded-lg transition" onclick="toggleReportSection('detail-expense')">
-                            <p class="text-xs text-gray-400 mb-1">รายจ่ายทั้งหมด <span class="text-[10px] text-gray-500">(คลิกดูบิล)</span></p>
+                        <div class="text-center border-l border-gray-600 p-2">
+                            <p class="text-xs text-gray-400 mb-1">รายจ่ายทั้งหมด</p>
                             <p class="text-xl font-bold text-red-400">฿${totalExpense.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- กล่องแยกรายละเอียด 4 ส่วน (คลิกเพื่อดูรายละเอียด) -->
+            <!-- กล่องแยกรายละเอียด 4 ส่วน -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
                 <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
                     <div class="text-[10px] text-green-600 font-bold mb-1">💵 เงินสด</div>
@@ -612,32 +606,18 @@ function loadReportData() {
                 </div>
                 
                 <div class="bg-orange-50 p-3 rounded-xl border border-orange-200 text-center shadow-sm cursor-pointer hover:bg-orange-100 transition relative group" onclick="toggleReportSection('detail-table')">
-                    <div class="text-[10px] text-orange-600 font-bold mb-1">🎱 รวมค่าโต๊ะ <span class="text-[9px] font-normal text-orange-500">(คลิก)</span></div>
+                    <div class="text-[10px] text-orange-600 font-bold mb-1">🎱 รวมค่าโต๊ะ <span class="text-[9px] font-normal text-orange-500">(คลิกดู)</span></div>
                     <div class="text-sm font-bold text-orange-700">฿${totalTable}</div>
                 </div>
                 
                 <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-center shadow-sm cursor-pointer hover:bg-purple-100 transition relative group" onclick="toggleReportSection('detail-product')">
-                    <div class="text-[10px] text-purple-600 font-bold mb-1">🍔 รวมค่าสินค้า <span class="text-[9px] font-normal text-purple-500">(คลิก)</span></div>
+                    <div class="text-[10px] text-purple-600 font-bold mb-1">🍔 รวมค่าสินค้า <span class="text-[9px] font-normal text-purple-500">(คลิกดู)</span></div>
                     <div class="text-sm font-bold text-purple-700">฿${totalProduct}</div>
                 </div>
             </div>
 
-            <!-- ================= กล่องรายละเอียด (ซ่อนไว้ก่อน) ================= -->
+            <!-- ================= กล่องรายละเอียดที่ถูกซ่อน (แสดงเมื่อคลิก) ================= -->
             
-            <!-- กล่อง: ประวัติรายรับ -->
-            <div id="detail-income" class="hidden bg-green-50 border border-green-200 p-4 rounded-xl mb-4 relative shadow-inner">
-                <button onclick="toggleReportSection('detail-income')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button>
-                <h3 class="font-bold text-green-700 mb-3 border-b border-green-200 pb-2 flex items-center gap-2 text-sm"><span>📥</span> ประวัติรับเงิน</h3>
-                <div class="space-y-1">${billsHtml}</div>
-            </div>
-
-            <!-- กล่อง: ประวัติรายจ่าย -->
-            <div id="detail-expense" class="hidden bg-red-50 border border-red-200 p-4 rounded-xl mb-4 relative shadow-inner">
-                <button onclick="toggleReportSection('detail-expense')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button>
-                <h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2 text-sm"><span>💸</span> ประวัติจ่ายเงิน</h3>
-                <div class="space-y-1">${expensesHtml}</div>
-            </div>
-
             <!-- กล่อง: สถิติโต๊ะ -->
             <div id="detail-table" class="hidden bg-orange-50 border border-orange-200 p-4 rounded-xl mb-4 relative shadow-inner">
                 <button onclick="toggleReportSection('detail-table')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button>
@@ -650,6 +630,18 @@ function loadReportData() {
                 <button onclick="toggleReportSection('detail-product')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button>
                 <h3 class="font-bold text-purple-700 mb-3 border-b border-purple-200 pb-2 flex items-center gap-2 text-sm">🍔 สรุปยอดขายสินค้า (เช็คสต๊อก)</h3>
                 ${productStatsHtml}
+            </div>
+
+            <!-- ================= ประวัติรับ-จ่าย (แสดงตลอดด้านล่าง) ================= -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                    <h3 class="font-bold text-green-700 mb-3 border-b pb-2 flex items-center gap-2 text-sm"><span>📥</span> ประวัติรับเงิน</h3>
+                    <div class="space-y-1">${billsHtml}</div>
+                </div>
+                <div class="bg-red-50 p-4 rounded-xl border border-red-100">
+                    <h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2 text-sm"><span>💸</span> ประวัติจ่ายเงิน</h3>
+                    <div class="space-y-1">${expensesHtml}</div>
+                </div>
             </div>
         `;
     }).catch((error) => {
