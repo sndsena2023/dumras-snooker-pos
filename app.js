@@ -15,7 +15,7 @@ const db = firebase.firestore();
 
 const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
-const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเบอร์พร้อมเพย์ที่นี่
+const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์ที่นี่
 
 const TABLES = [
     { id: "N1", type: "NORMAL", name: "โต๊ะ 1" }, { id: "N2", type: "NORMAL", name: "โต๊ะ 2" },
@@ -226,7 +226,7 @@ function renderCurrentOrders() {
 }
 
 // =========================================================
-// 6. ระบบบันทึกรายจ่าย (ใหม่)
+// 6. ระบบบันทึกรายจ่าย
 // =========================================================
 function openExpenseModal() { document.getElementById("expense-modal").classList.remove("hidden"); }
 function closeExpenseModal() { document.getElementById("expense-modal").classList.add("hidden"); }
@@ -252,7 +252,6 @@ function saveExpense() {
         document.getElementById("expense-amount").value = "";
         closeExpenseModal();
     }).catch((error) => {
-        console.error("Error writing expense: ", error);
         alert("เกิดข้อผิดพลาดในการบันทึกรายจ่าย");
     });
 }
@@ -379,12 +378,10 @@ function saveReceiptImage() { html2canvas(document.getElementById("receipt-paper
 function closeReceiptModal() { document.getElementById("receipt-modal").classList.add("hidden"); }
 
 // =========================================================
-// 9. ระบบบัญชี (รายรับ-รายจ่าย เลือกวันได้)
+// 9. ระบบบัญชี, แยกรายละเอียด, และเช็คสต๊อก
 // =========================================================
 function openReportModal() {
     document.getElementById("report-modal").classList.remove("hidden");
-    
-    // ตั้งค่า Date Picker เป็นวันปัจจุบันถ้ายังไม่ได้เลือก
     const datePicker = document.getElementById("report-date-picker");
     if (!datePicker.value) {
         const today = new Date();
@@ -393,51 +390,99 @@ function openReportModal() {
         const dd = String(today.getDate()).padStart(2, '0');
         datePicker.value = `${yyyy}-${mm}-${dd}`;
     }
-    
     loadReportData();
 }
 
 function loadReportData() {
     document.getElementById("report-content").innerHTML = '<p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูลบัญชี...</p>';
     
-    // ดึงวันที่จาก Input
     const selectedDateStr = document.getElementById("report-date-picker").value;
     const targetDate = new Date(selectedDateStr);
-    
     const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(targetDate); endOfDay.setHours(23, 59, 59, 999);
 
-    // โหลดข้อมูล รายรับ (transactions) และ รายจ่าย (expenses) พร้อมกัน
     Promise.all([
         db.collection("transactions").where("timestamp", ">=", startOfDay).where("timestamp", "<=", endOfDay).orderBy("timestamp", "desc").get(),
         db.collection("expenses").where("timestamp", ">=", startOfDay).where("timestamp", "<=", endOfDay).orderBy("timestamp", "desc").get()
     ]).then(([transSnapshot, expSnapshot]) => {
         
         let totalIncome = 0, totalExpense = 0;
+        let totalCash = 0, totalTransfer = 0;
+        let totalTable = 0, totalProduct = 0;
+        
+        let tableStats = {};
+        let productStats = {};
+
         let billsHtml = '', expensesHtml = '';
         
-        // 1. ประมวลผลรายรับ
+        // --- 1. ประมวลผลรายรับ (Transactions) ---
         transSnapshot.forEach((doc) => {
             const data = doc.data();
-            totalIncome += (data.grandTotal || 0);
+            const gTotal = data.grandTotal || 0;
+            totalIncome += gTotal;
             
+            if(data.method === 'เงินสด') totalCash += gTotal;
+            if(data.method === 'เงินโอน') totalTransfer += gTotal;
+
+            // คำนวณแยกค่าโต๊ะ / ค่าสินค้า
+            let tFee = data.timeFee || 0;
+            let pFee = data.itemsFee || 0;
+            if (tFee === 0 && pFee === 0 && data.items && data.items.length > 0) {
+                tFee = data.items[0].total || 0;
+                pFee = gTotal - tFee;
+            }
+            totalTable += tFee;
+            totalProduct += pFee;
+
+            // สถิติโต๊ะ
+            const tName = data.tableName;
+            let hrs = data.hoursPlayed;
+            if (hrs === undefined && data.items && data.items.length > 0) {
+                const match = data.items[0].name.match(/ค่าโต๊ะ \(([\d.]+) ชม.\)/);
+                hrs = match && match[1] ? parseFloat(match[1]) : 0;
+            } else if (hrs === undefined) hrs = 0;
+
+            if (!tableStats[tName]) tableStats[tName] = { sessions: 0, hours: 0, total: 0 };
+            tableStats[tName].sessions += 1;
+            tableStats[tName].hours += hrs;
+            tableStats[tName].total += tFee;
+
+            // สถิติสินค้า (เช็คสต๊อก)
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(item => {
+                    if (!item.name.startsWith("ค่าโต๊ะ")) {
+                        if (!productStats[item.name]) productStats[item.name] = { qty: 0, total: 0 };
+                        productStats[item.name].qty += item.qty;
+                        productStats[item.name].total += item.total;
+                    }
+                });
+            }
+            
+            // HTML สำหรับประวัติบิลรายรับ
             const timeStr = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '-';
             billsHtml += `
-                <div class="flex justify-between items-center border-b border-gray-100 py-2 text-sm">
-                    <div>
-                        <div class="font-bold text-gray-700">${data.tableName} <span class="text-xs font-normal text-gray-400 ml-1">(${timeStr})</span></div>
-                        <div class="text-xs text-gray-500">รับโดย: ${data.staffName}</div>
+                <div class="border-b border-gray-100 py-2 text-sm">
+                    <div class="flex justify-between items-center mb-1">
+                        <div>
+                            <span class="font-bold text-gray-700">${data.tableName}</span>
+                            <span class="text-xs text-gray-400 ml-1">(${timeStr})</span>
+                        </div>
+                        <div class="font-bold text-green-600 text-lg">+฿${gTotal}</div>
                     </div>
-                    <div class="text-right">
-                        <div class="font-bold text-green-600 text-lg">+฿${data.grandTotal}</div>
-                        <div class="text-[10px] font-bold px-2 rounded-full inline-block ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div>
+                    <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
+                        <div>รับโดย: ${data.staffName}</div>
+                        <div class="font-bold px-2 rounded-full ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div>
+                    </div>
+                    <div class="flex gap-2 text-xs text-gray-500 bg-green-50 p-1.5 rounded">
+                        <span class="flex-1">🎱 โต๊ะ: ฿${tFee}</span>
+                        <span class="flex-1">🍔 ของ: ฿${pFee}</span>
                     </div>
                 </div>
             `;
         });
-        if(transSnapshot.empty) billsHtml = '<p class="text-sm text-gray-400 py-2">ไม่มีรายรับในวันนี้</p>';
+        if(transSnapshot.empty) billsHtml = '<p class="text-sm text-gray-400 py-2">ไม่มีรายรับ</p>';
 
-        // 2. ประมวลผลรายจ่าย
+        // --- 2. ประมวลผลรายจ่าย (Expenses) ---
         expSnapshot.forEach((doc) => {
             const data = doc.data();
             totalExpense += (data.amount || 0);
@@ -447,52 +492,108 @@ function loadReportData() {
                 <div class="flex justify-between items-center border-b border-gray-100 py-2 text-sm">
                     <div>
                         <div class="font-bold text-gray-700">${data.description} <span class="text-xs font-normal text-gray-400 ml-1">(${timeStr})</span></div>
-                        <div class="text-xs text-gray-500">บันทึกโดย: ${data.staffName}</div>
+                        <div class="text-xs text-gray-500">จ่ายโดย: ${data.staffName}</div>
                     </div>
                     <div class="font-bold text-red-500 text-lg">-฿${data.amount}</div>
                 </div>
             `;
         });
-        if(expSnapshot.empty) expensesHtml = '<p class="text-sm text-gray-400 py-2">ไม่มีรายจ่ายในวันนี้</p>';
+        if(expSnapshot.empty) expensesHtml = '<p class="text-sm text-gray-400 py-2">ไม่มีรายจ่าย</p>';
 
-        // 3. สรุปยอดบัญชี
+        // --- 3. สร้าง HTML สถิติ ---
+        let tableStatsHtml = '<div class="grid grid-cols-2 gap-2 text-sm">';
+        for (let [tName, stat] of Object.entries(tableStats)) {
+            tableStatsHtml += `
+                <div class="bg-orange-50 border border-orange-100 p-2 rounded-lg flex flex-col justify-between">
+                    <div class="flex justify-between mb-1">
+                        <span class="font-bold text-gray-800">${tName}</span><span class="text-xs text-gray-500">${stat.sessions} บิล</span>
+                    </div>
+                    <div class="flex justify-between items-end">
+                        <span class="font-bold text-orange-600">${stat.hours.toFixed(1)} ชม.</span><span class="text-xs text-gray-600">฿${stat.total}</span>
+                    </div>
+                </div>`;
+        }
+        tableStatsHtml += '</div>';
+        if(Object.keys(tableStats).length === 0) tableStatsHtml = '<p class="text-xs text-gray-400">ยังไม่มีการเปิดโต๊ะ</p>';
+
+        const sortedProducts = Object.entries(productStats).sort((a, b) => b[1].qty - a[1].qty);
+        let productStatsHtml = '<div class="space-y-1 text-sm">';
+        for (let [pName, stat] of sortedProducts) {
+            productStatsHtml += `
+                <div class="flex justify-between items-center border-b border-gray-100 pb-1.5">
+                    <div class="font-bold text-gray-700">${pName}</div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">x${stat.qty}</span>
+                        <span class="w-12 text-right font-bold text-gray-800">฿${stat.total}</span>
+                    </div>
+                </div>`;
+        }
+        productStatsHtml += '</div>';
+        if(sortedProducts.length === 0) productStatsHtml = '<p class="text-xs text-gray-400">ยังไม่มีการขายสินค้า</p>';
+
+        // --- 4. แสดงผลทั้งหมดลงบนจอ ---
         const netProfit = totalIncome - totalExpense;
         const profitColorClass = netProfit >= 0 ? 'text-green-400' : 'text-red-400';
 
         document.getElementById("report-content").innerHTML = `
-            <!-- กล่องสรุปยอดบัญชี -->
-            <div class="bg-gray-800 text-white p-5 rounded-2xl shadow-lg mb-6 relative overflow-hidden">
+            <!-- สรุปกำไรสุทธิ -->
+            <div class="bg-gray-800 text-white p-5 rounded-2xl shadow-lg mb-4 relative overflow-hidden">
                 <div class="relative z-10 flex flex-col items-center">
                     <p class="text-sm text-gray-300 mb-1">ยอดคงเหลือสุทธิ (Net Balance)</p>
                     <p class="text-4xl font-bold ${profitColorClass} mb-4">฿${netProfit.toLocaleString()}</p>
-                    
                     <div class="w-full grid grid-cols-2 gap-4 border-t border-gray-600 pt-4 mt-2">
                         <div class="text-center">
-                            <p class="text-xs text-gray-400 mb-1">รายรับ (Income)</p>
+                            <p class="text-xs text-gray-400 mb-1">รายรับทั้งหมด</p>
                             <p class="text-xl font-bold text-green-400">฿${totalIncome.toLocaleString()}</p>
                         </div>
                         <div class="text-center border-l border-gray-600">
-                            <p class="text-xs text-gray-400 mb-1">รายจ่าย (Expense)</p>
+                            <p class="text-xs text-gray-400 mb-1">รายจ่ายทั้งหมด</p>
                             <p class="text-xl font-bold text-red-400">฿${totalExpense.toLocaleString()}</p>
                         </div>
                     </div>
                 </div>
             </div>
+
+            <!-- กล่องแยกรายละเอียดรายรับ 4 ส่วน -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+                <div class="bg-green-50 p-2 rounded-xl border border-green-200 text-center shadow-sm">
+                    <div class="text-[10px] text-green-600 font-bold mb-1">💵 เงินสด</div>
+                    <div class="text-sm font-bold text-green-700">฿${totalCash}</div>
+                </div>
+                <div class="bg-blue-50 p-2 rounded-xl border border-blue-200 text-center shadow-sm">
+                    <div class="text-[10px] text-blue-600 font-bold mb-1">📱 เงินโอน</div>
+                    <div class="text-sm font-bold text-blue-700">฿${totalTransfer}</div>
+                </div>
+                <div class="bg-orange-50 p-2 rounded-xl border border-orange-200 text-center shadow-sm">
+                    <div class="text-[10px] text-orange-600 font-bold mb-1">🎱 รวมค่าโต๊ะ</div>
+                    <div class="text-sm font-bold text-orange-700">฿${totalTable}</div>
+                </div>
+                <div class="bg-purple-50 p-2 rounded-xl border border-purple-200 text-center shadow-sm">
+                    <div class="text-[10px] text-purple-600 font-bold mb-1">🍔 รวมค่าสินค้า</div>
+                    <div class="text-sm font-bold text-purple-700">฿${totalProduct}</div>
+                </div>
+            </div>
             
+            <!-- สถิติโต๊ะ และ สินค้า -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div>
+                    <h3 class="font-bold text-orange-700 mb-2 border-b border-orange-200 pb-1 text-sm">🎱 สรุปการใช้โต๊ะ</h3>
+                    ${tableStatsHtml}
+                </div>
+                <div>
+                    <h3 class="font-bold text-purple-700 mb-2 border-b border-purple-200 pb-1 text-sm">🍔 สรุปยอดขายสินค้า (เช็คสต๊อก)</h3>
+                    ${productStatsHtml}
+                </div>
+            </div>
+
+            <!-- ประวัติบิล และ รายจ่าย -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- คอลัมน์รายรับ -->
                 <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                    <h3 class="font-bold text-green-700 mb-3 border-b pb-2 flex items-center gap-2">
-                        <span>📥</span> รายการรับเงิน
-                    </h3>
+                    <h3 class="font-bold text-green-700 mb-3 border-b pb-2 flex items-center gap-2 text-sm"><span>📥</span> ประวัติรับเงิน</h3>
                     <div class="space-y-1">${billsHtml}</div>
                 </div>
-
-                <!-- คอลัมน์รายจ่าย -->
                 <div class="bg-red-50 p-4 rounded-xl border border-red-100">
-                    <h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2">
-                        <span>💸</span> รายการจ่ายเงิน
-                    </h3>
+                    <h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2 text-sm"><span>💸</span> ประวัติจ่ายเงิน</h3>
                     <div class="space-y-1">${expensesHtml}</div>
                 </div>
             </div>
