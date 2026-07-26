@@ -15,7 +15,7 @@ const db = firebase.firestore();
 
 const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
-const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ อย่าลืมเปลี่ยนเป็นเบอร์พร้อมเพย์รับเงินของร้าน
+const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์รับเงินของร้าน
 
 const TABLES = [
     { id: "N1", type: "NORMAL", name: "โต๊ะ 1" }, { id: "N2", type: "NORMAL", name: "โต๊ะ 2" },
@@ -46,7 +46,6 @@ async function initializeDefaultStaff() {
     if (staffSnapshot.empty) {
         await db.collection("staff").doc("1234").set({ id: "S01", name: "พนักงาน 1", pin: "1234", role: "staff" });
         await db.collection("staff").doc("9999").set({ id: "A01", name: "เจ้าของร้าน", pin: "9999", role: "admin" });
-        console.log("สร้างฐานข้อมูลพนักงานเริ่มต้นเรียบร้อย");
     }
 }
 initializeDefaultStaff();
@@ -71,8 +70,15 @@ function loadDataLocally() {
 }
 loadDataLocally();
 
+// ตั้งเวลาอัปเดตหน้าจอทุกๆ 1 นาที เพื่อให้เวลาเล่นไหลไปเรื่อยๆ (Real-time Timer)
+setInterval(() => {
+    if (currentStaff && !document.getElementById("dashboard-screen").classList.contains("hidden")) {
+        renderTables();
+    }
+}, 60000);
+
 // =========================================================
-// 4. ระบบ Login
+// 4. ระบบ Login & Session (จดจำการล็อกอิน)
 // =========================================================
 function pressPin(num) {
     if (currentPin.length < 4) {
@@ -93,20 +99,10 @@ async function checkLogin() {
             const staffData = querySnapshot.docs[0].data();
             currentStaff = staffData;
             
-            document.getElementById("current-staff-name").innerText = `${staffData.name}`;
+            // [ใหม่] บันทึกการล็อกอินลงในเครื่อง
+            localStorage.setItem("dumras_staff_session", JSON.stringify(staffData));
             
-            if (staffData.role === "admin") {
-                document.getElementById("btn-admin-manage").classList.remove("hidden");
-                document.getElementById("btn-admin-report").classList.remove("hidden");
-            } else {
-                document.getElementById("btn-admin-manage").classList.add("hidden");
-                document.getElementById("btn-admin-report").classList.add("hidden");
-            }
-
-            document.getElementById("login-screen").classList.add("hidden");
-            document.getElementById("dashboard-screen").classList.remove("hidden");
-            clearPin();
-            renderTables();
+            applyLoginState();
         } else {
             document.getElementById("pin-error").innerText = "รหัส PIN ไม่ถูกต้อง";
             setTimeout(clearPin, 800);
@@ -118,8 +114,39 @@ async function checkLogin() {
     }
 }
 
+// นำสถานะล็อกอินมาแสดงผล
+function applyLoginState() {
+    document.getElementById("current-staff-name").innerText = `${currentStaff.name}`;
+            
+    if (currentStaff.role === "admin") {
+        document.getElementById("btn-admin-manage").classList.remove("hidden");
+        document.getElementById("btn-admin-report").classList.remove("hidden");
+    } else {
+        document.getElementById("btn-admin-manage").classList.add("hidden");
+        document.getElementById("btn-admin-report").classList.add("hidden");
+    }
+
+    document.getElementById("login-screen").classList.add("hidden");
+    document.getElementById("dashboard-screen").classList.remove("hidden");
+    clearPin();
+    renderTables();
+}
+
+// [ใหม่] โหลดสถานะการล็อกอินทันทีที่เปิดแอป
+function restoreSession() {
+    const savedStaff = localStorage.getItem("dumras_staff_session");
+    if (savedStaff) {
+        currentStaff = JSON.parse(savedStaff);
+        applyLoginState();
+    }
+}
+restoreSession(); // เรียกใช้ทันที
+
 function logout() {
     currentStaff = null;
+    // [ใหม่] ลบข้อมูลล็อกอินออกจากเครื่องเมื่อกดออกระบบ
+    localStorage.removeItem("dumras_staff_session");
+    
     document.getElementById("dashboard-screen").classList.add("hidden");
     document.getElementById("login-screen").classList.remove("hidden");
 }
@@ -132,6 +159,8 @@ function renderTables() {
     const vipContainer = document.getElementById("vip-tables-container");
     normalContainer.innerHTML = ""; vipContainer.innerHTML = "";
 
+    const isAdmin = currentStaff && currentStaff.role === "admin";
+
     TABLES.forEach(table => {
         const tableData = activeTables[table.id];
         const isActive = !!tableData;
@@ -139,30 +168,65 @@ function renderTables() {
         const gradient = table.type === "VIP" ? "from-yellow-50 to-orange-50" : "from-blue-50 to-cyan-50";
 
         let totalItemsCount = 0;
-        if(isActive && tableData.orders) Object.values(tableData.orders).forEach(o => totalItemsCount += o.qty);
+        let timeStartString = "";
+        let timeElapsedString = "";
+
+        if (isActive) {
+            if (tableData.orders) {
+                Object.values(tableData.orders).forEach(o => totalItemsCount += o.qty);
+            }
+            
+            const startTime = tableData.startTime;
+            timeStartString = startTime.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'});
+            
+            const now = new Date();
+            const diffMs = now - startTime;
+            const diffMins = Math.floor(diffMs / 60000);
+            const hrs = Math.floor(diffMins / 60);
+            const mins = diffMins % 60;
+            timeElapsedString = `${hrs} ชม. ${mins} นาที`;
+        }
+
+        let actionButtons = "";
+        if (isActive) {
+            if (isAdmin) {
+                actionButtons = `<div class="text-center text-sm font-bold text-purple-600 bg-purple-100 py-2 rounded-xl border border-purple-200 shadow-inner">👁️ โหมดดูสถานะ</div>`;
+            } else {
+                actionButtons = `
+                    <div class="flex gap-2">
+                        <button onclick="openOrderModal('${table.id}', '${table.name}')" class="flex-1 bg-white border border-blue-500 text-blue-600 font-medium py-2 rounded-xl text-sm hover:bg-blue-50 transition">สั่งของ</button>
+                        <button onclick="openCheckoutModal('${table.id}', '${table.name}', '${table.type}')" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-xl text-sm shadow-sm transition">เช็คบิล</button>
+                    </div>`;
+            }
+        } else {
+            if (isAdmin) {
+                actionButtons = `<div class="text-center text-sm text-gray-400 py-2">- โต๊ะว่าง -</div>`;
+            } else {
+                actionButtons = `<button onclick="startTable('${table.id}')" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 rounded-xl shadow-sm transition">เปิดโต๊ะ</button>`;
+            }
+        }
 
         const cardHTML = `
             <div class="bg-gradient-to-b ${gradient} p-4 rounded-2xl shadow-sm border-t-4 ${borderColor} relative">
                 <div class="flex justify-between items-start mb-3">
                     <h3 class="font-bold text-xl">${table.name}</h3>
-                    <span class="text-xs px-2 py-1 rounded-full font-medium ${isActive ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}">
+                    <span class="text-xs px-2 py-1 rounded-full font-medium ${isActive ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600'}">
                         ${isActive ? 'กำลังเล่น' : 'ว่าง'}
                     </span>
                 </div>
                 ${isActive 
-                    ? `<div class="text-xs text-gray-500 mb-3">
-                         <p>⏰ เริ่ม: ${tableData.startTime.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'})}</p>
-                         <p>🛒 สั่งของแล้ว: <span class="font-bold text-blue-600">${totalItemsCount}</span> ชิ้น</p>
+                    ? `<div class="text-xs text-gray-600 mb-3 space-y-1">
+                         <p>⏰ เริ่มเล่น: <span class="font-bold">${timeStartString}</span></p>
+                         <p>⏱️ เวลาที่เล่น: <span class="font-bold text-blue-600">${timeElapsedString}</span></p>
+                         <p>🛒 สั่งสินค้า: <span class="font-bold">${totalItemsCount}</span> ชิ้น</p>
                        </div>
-                       <div class="flex gap-2">
-                           <button onclick="openOrderModal('${table.id}', '${table.name}')" class="flex-1 bg-white border border-blue-500 text-blue-600 font-medium py-2 rounded-xl text-sm">สั่งของ</button>
-                           <button onclick="openCheckoutModal('${table.id}', '${table.name}', '${table.type}')" class="flex-1 bg-red-500 text-white font-medium py-2 rounded-xl text-sm">เช็คบิล</button>
-                       </div>` 
-                    : `<p class="text-sm text-gray-400 mb-4">- ยังไม่มีลูกค้า -</p>
-                       <button onclick="startTable('${table.id}')" class="w-full bg-blue-500 text-white font-medium py-2 rounded-xl">เปิดโต๊ะ</button>`
+                       ${actionButtons}` 
+                    : `<p class="text-sm text-gray-400 mb-4 text-center">- ยังไม่มีลูกค้า -</p>
+                       ${actionButtons}`
                 }
             </div>
         `;
+
         if (table.type === "NORMAL") normalContainer.innerHTML += cardHTML;
         else vipContainer.innerHTML += cardHTML;
     });
@@ -250,19 +314,15 @@ function addNewProduct() {
     renderAdminProductList();
 }
 
-// ----------------- ส่วนจัดการพนักงาน (เพิ่ม/ลบ) -----------------
 async function renderAdminStaffList() {
     const listDiv = document.getElementById("admin-staff-list");
     listDiv.innerHTML = '<p class="text-gray-400 text-sm">กำลังโหลด...</p>';
-    
     try {
         const snapshot = await db.collection("staff").get();
         let html = "";
         snapshot.forEach(doc => {
             const s = doc.data();
             const pinId = doc.id;
-            
-            // ป้องกันไม่ให้ลบ PIN ของเจ้าของร้านหลัก (9999) เพื่อความปลอดภัย
             const deleteButton = pinId !== "9999" 
                 ? `<button onclick="deleteStaff('${pinId}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1 rounded-lg text-xs font-medium transition">ลบ</button>` 
                 : `<span class="text-[10px] text-gray-400 px-2 py-1">(บัญชีหลัก)</span>`;
@@ -292,34 +352,18 @@ async function addNewStaff() {
     const name = document.getElementById("new-s-name").value.trim();
     const pin = document.getElementById("new-s-pin").value.trim();
     const role = document.getElementById("new-s-role").value;
-
-    if (!name || pin.length !== 4 || isNaN(pin)) {
-        alert("กรุณากรอกชื่อและรหัส PIN 4 หลักให้ถูกต้อง");
-        return;
-    }
+    if (!name || pin.length !== 4 || isNaN(pin)) { alert("กรุณากรอกชื่อและรหัส PIN 4 หลักให้ถูกต้อง"); return; }
 
     try {
         const checkPin = await db.collection("staff").where("pin", "==", pin).get();
-        if(!checkPin.empty) {
-            alert("รหัส PIN นี้มีผู้ใช้งานแล้ว กรุณาใช้รหัสอื่น");
-            return;
-        }
+        if(!checkPin.empty) { alert("รหัส PIN นี้มีผู้ใช้งานแล้ว กรุณาใช้รหัสอื่น"); return; }
 
         const staffId = 'S' + Math.floor(10 + Math.random() * 90);
-        await db.collection("staff").doc(pin).set({
-            id: staffId,
-            name: name,
-            pin: pin,
-            role: role
-        });
-
-        document.getElementById("new-s-name").value = "";
-        document.getElementById("new-s-pin").value = "";
+        await db.collection("staff").doc(pin).set({ id: staffId, name: name, pin: pin, role: role });
+        document.getElementById("new-s-name").value = ""; document.getElementById("new-s-pin").value = "";
         alert("เพิ่มพนักงานสำเร็จ!");
         renderAdminStaffList();
-    } catch(e) {
-        alert("เกิดข้อผิดพลาดในการบันทึก");
-    }
+    } catch(e) { alert("เกิดข้อผิดพลาดในการบันทึก"); }
 }
 
 async function deleteStaff(pin) {
@@ -328,9 +372,7 @@ async function deleteStaff(pin) {
             await db.collection("staff").doc(pin).delete();
             alert("ลบพนักงานสำเร็จ!");
             renderAdminStaffList();
-        } catch(e) {
-            alert("เกิดข้อผิดพลาดในการลบพนักงาน");
-        }
+        } catch(e) { alert("เกิดข้อผิดพลาดในการลบพนักงาน"); }
     }
 }
 
@@ -391,6 +433,8 @@ function processPayment(method) {
         tableId: data.tableId,
         tableName: data.tableName,
         method: method,
+        timeFee: data.timeFee,
+        itemsFee: data.itemsFee,
         grandTotal: data.grandTotal,
         staffId: currentStaff.id,
         staffName: currentStaff.name,
@@ -446,25 +490,43 @@ function openReportModal() {
       .get()
       .then((querySnapshot) => {
           let totalGrand = 0, totalCash = 0, totalTransfer = 0;
+          let totalTable = 0, totalProduct = 0;
           let billsHtml = '';
 
           querySnapshot.forEach((doc) => {
               const data = doc.data();
-              totalGrand += data.grandTotal;
-              if(data.method === 'เงินสด') totalCash += data.grandTotal;
-              if(data.method === 'เงินโอน') totalTransfer += data.grandTotal;
+              const gTotal = data.grandTotal || 0;
               
-              const timeString = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '-';
+              totalGrand += gTotal;
+              
+              if(data.method === 'เงินสด') totalCash += gTotal;
+              if(data.method === 'เงินโอน') totalTransfer += gTotal;
+              
+              let tFee = data.timeFee || 0;
+              let pFee = data.itemsFee || 0;
+              if (tFee === 0 && pFee === 0 && data.items && data.items.length > 0) {
+                  tFee = data.items[0].total || 0;
+                  pFee = gTotal - tFee;
+              }
+              
+              totalTable += tFee;
+              totalProduct += pFee;
+              
+              const dateTimeString = data.timestamp ? data.timestamp.toDate().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-';
               
               billsHtml += `
-                <div class="flex justify-between items-center border-b border-gray-100 py-3 text-sm">
-                    <div>
+                <div class="border-b border-gray-100 py-3 text-sm">
+                    <div class="flex justify-between items-center mb-1">
                         <div class="font-bold text-gray-700">${data.tableName}</div>
-                        <div class="text-gray-400 text-xs">พนักงาน: ${data.staffName} • ${timeString}</div>
+                        <div class="font-bold text-gray-800 text-lg">฿${gTotal}</div>
                     </div>
-                    <div class="text-right">
-                        <div class="font-bold text-gray-800 text-lg">฿${data.grandTotal}</div>
-                        <div class="text-[10px] font-bold px-2 py-0.5 rounded-full inline-block mt-1 ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div>
+                    <div class="flex justify-between items-center text-xs text-gray-500 mb-2">
+                        <div>📅 ${dateTimeString} | 👤 ${data.staffName}</div>
+                        <div class="font-bold px-2 py-0.5 rounded-full ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div>
+                    </div>
+                    <div class="flex gap-4 text-xs text-gray-500 bg-gray-50 p-2 rounded-lg">
+                        <span class="flex-1">🎱 ค่าโต๊ะ: <span class="font-bold text-gray-700">฿${tFee}</span></span>
+                        <span class="flex-1">🍔 ค่าสินค้า: <span class="font-bold text-gray-700">฿${pFee}</span></span>
                     </div>
                 </div>
               `;
@@ -475,21 +537,31 @@ function openReportModal() {
           }
 
           document.getElementById("report-content").innerHTML = `
-            <div class="grid grid-cols-2 gap-4 mb-4 mt-2">
-                <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
-                    <div class="text-xs text-green-600 font-bold mb-1">💵 รวมเงินสด</div>
-                    <div class="text-xl font-bold text-green-700">฿${totalCash}</div>
-                </div>
-                <div class="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center shadow-sm">
-                    <div class="text-xs text-blue-600 font-bold mb-1">📱 รวมเงินโอน</div>
-                    <div class="text-xl font-bold text-blue-700">฿${totalTransfer}</div>
-                </div>
-            </div>
-            <div class="bg-gray-800 text-white p-4 rounded-xl text-center mb-6 shadow-md">
+            <div class="bg-gray-800 text-white p-4 rounded-xl text-center mb-4 shadow-md">
                 <div class="text-xs text-gray-300 mb-1">💰 ยอดขายรวมทั้งสิ้น (วันนี้)</div>
                 <div class="text-4xl font-bold text-yellow-400">฿${totalGrand}</div>
             </div>
-            <h3 class="font-bold text-gray-700 mb-2 border-b pb-2">📋 ประวัติบิลวันนี้:</h3>
+            
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
+                    <div class="text-xs text-green-600 font-bold mb-1">💵 เงินสด</div>
+                    <div class="text-lg font-bold text-green-700">฿${totalCash}</div>
+                </div>
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center shadow-sm">
+                    <div class="text-xs text-blue-600 font-bold mb-1">📱 เงินโอน</div>
+                    <div class="text-lg font-bold text-blue-700">฿${totalTransfer}</div>
+                </div>
+                <div class="bg-orange-50 p-3 rounded-xl border border-orange-200 text-center shadow-sm">
+                    <div class="text-xs text-orange-600 font-bold mb-1">🎱 รวมค่าโต๊ะ</div>
+                    <div class="text-lg font-bold text-orange-700">฿${totalTable}</div>
+                </div>
+                <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-center shadow-sm">
+                    <div class="text-xs text-purple-600 font-bold mb-1">🍔 รวมค่าสินค้า</div>
+                    <div class="text-lg font-bold text-purple-700">฿${totalProduct}</div>
+                </div>
+            </div>
+            
+            <h3 class="font-bold text-gray-700 mb-2 border-b pb-2 mt-4">📋 รายการบิลวันนี้:</h3>
             <div class="space-y-1">${billsHtml}</div>
           `;
       })
