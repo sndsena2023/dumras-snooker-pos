@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ดำรัส สนุ๊กเกอร์ POS</title>
     
+    <!-- ระบบ PWA และการตั้งค่าหน้าจอสำหรับมือถือ/iPad -->
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#3b82f6">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -12,11 +13,18 @@
     <meta name="apple-mobile-web-app-title" content="DumrasPOS">
     <link rel="apple-touch-icon" href="icon-192.png">
 
+    <!-- ดึง Tailwind CSS และ Font -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- เครื่องมือแปลง HTML เป็นรูปภาพ (ทำใบเสร็จ) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    
+    <!-- ดึง Firebase -->
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+
+    <!-- ระบบแจ้งเตือน OneSignal -->
     <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
     <script>
       window.OneSignalDeferred = window.OneSignalDeferred || [];
@@ -46,24 +54,27 @@
     <!-- ================= หน้าจอ LOGIN ================= -->
     <div id="login-screen" class="absolute inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-blue-100 to-purple-100">
         <div class="glass-panel p-8 rounded-3xl shadow-xl w-80 text-center border border-white">
-            <div class="text-4xl mb-2">🎱</div>
+            
+            <!-- แก้ไขโลโก้หน้า Login -->
+            <img src="icon-512.png" alt="โลโก้ร้าน" class="w-24 h-24 mx-auto mb-4 object-contain drop-shadow-md rounded-2xl">
+            
             <h1 class="text-2xl font-bold text-gray-800 mb-6">ดำรัส สนุ๊กเกอร์</h1>
             <div class="flex justify-center gap-4 mb-8">
                 <div id="pin-1" class="dot"></div><div id="pin-2" class="dot"></div>
                 <div id="pin-3" class="dot"></div><div id="pin-4" class="dot"></div>
             </div>
             <div class="grid grid-cols-3 gap-4">
-                <button onclick="pressPin('1')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">1</button>
-                <button onclick="pressPin('2')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">2</button>
-                <button onclick="pressPin('3')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">3</button>
-                <button onclick="pressPin('4')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">4</button>
-                <button onclick="pressPin('5')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">5</button>
-                <button onclick="pressPin('6')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">6</button>
-                <button onclick="pressPin('7')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">7</button>
-                <button onclick="pressPin('8')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">8</button>
-                <button onclick="pressPin('9')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">9</button>
-                <button onclick="clearPin()" class="h-14 w-14 bg-red-100 text-red-500 rounded-full shadow hover:bg-red-200 text-sm font-medium mx-auto">ลบ</button>
-                <button onclick="pressPin('0')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto">0</button>
+                <button onclick="pressPin('1')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">1</button>
+                <button onclick="pressPin('2')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">2</button>
+                <button onclick="pressPin('3')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">3</button>
+                <button onclick="pressPin('4')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">4</button>
+                <button onclick="pressPin('5')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">5</button>
+                <button onclick="pressPin('6')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">6</button>
+                <button onclick="pressPin('7')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">7</button>
+                <button onclick="pressPin('8')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">8</button>
+                <button onclick="pressPin('9')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">9</button>
+                <button onclick="clearPin()" class="h-14 w-14 bg-red-100 text-red-500 rounded-full shadow hover:bg-red-200 text-sm font-medium mx-auto active:scale-95">ลบ</button>
+                <button onclick="pressPin('0')" class="h-14 w-14 bg-white rounded-full shadow hover:bg-blue-50 text-xl font-medium mx-auto active:scale-95">0</button>
                 <div></div>
             </div>
             <p id="pin-error" class="text-red-500 text-sm mt-4 h-5"></p>
@@ -74,14 +85,16 @@
     <div id="dashboard-screen" class="hidden h-screen overflow-y-auto bg-gradient-to-br from-gray-50 to-gray-200 pb-10">
         <div class="bg-white shadow-sm sticky top-0 z-10">
             <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
+                
                 <div class="flex items-center gap-3 w-full sm:w-auto">
-                    <div class="text-3xl">🎱</div>
+                    <!-- แก้ไขโลโก้แถบเมนูด้านบน -->
+                    <img src="icon-512.png" alt="โลโก้ร้าน" class="w-10 h-10 object-contain rounded-lg">
                     <h1 class="text-xl font-bold text-gray-800">ดำรัส สนุ๊กเกอร์ POS</h1>
                 </div>
+
                 <div class="flex items-center gap-2 sm:gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-                    <!-- ปุ่มสำหรับ Admin -->
                     <button id="btn-admin-report" onclick="openReportModal()" class="hidden bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 shrink-0">📊 ยอดขายวันนี้</button>
-                    <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200 shrink-0">⚙️ จัดการสินค้า</button>
+                    <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200 shrink-0">⚙️ ตั้งค่าร้าน</button>
                     
                     <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium shrink-0">
                         <span id="current-staff-name">...</span>
@@ -103,14 +116,13 @@
         </div>
     </div>
 
-    <!-- ================= POPUP: รายงานยอดขาย (เพิ่มใหม่) ================= -->
+    <!-- ================= POPUP: รายงานยอดขาย ================= -->
     <div id="report-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] flex flex-col">
             <div class="flex justify-between items-center mb-4 shrink-0">
                 <h2 class="text-xl font-bold text-green-700">📊 สรุปยอดขายวันนี้</h2>
                 <button onclick="closeReportModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
             </div>
-            <!-- เนื้อหารายงานจะถูกใส่ตรงนี้โดย JS -->
             <div id="report-content" class="flex-1 overflow-y-auto pr-2">
                 <p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูล...</p>
             </div>
@@ -138,7 +150,6 @@
                 <button onclick="closeProductManager()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
             </div>
             
-            <!-- แท็บสลับหน้าจัดการ (สินค้า / พนักงาน) -->
             <div class="flex border-b mb-4">
                 <button onclick="switchAdminTab('products')" id="tab-btn-products" class="flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600">📦 จัดการสินค้า</button>
                 <button onclick="switchAdminTab('staff')" id="tab-btn-staff" class="flex-1 pb-2 font-bold text-gray-400">👥 ฐานข้อมูลพนักงาน</button>
@@ -164,7 +175,7 @@
                 <div id="admin-product-list" class="space-y-2"></div>
             </div>
 
-            <!-- ส่วนที่ 2: จัดการพนักงาน (เพิ่มใหม่) -->
+            <!-- ส่วนที่ 2: จัดการพนักงาน -->
             <div id="admin-section-staff" class="hidden">
                 <div class="bg-blue-50 p-4 rounded-xl mb-4 border border-blue-100">
                     <h3 class="font-bold text-sm mb-2 text-blue-800">เพิ่มพนักงานใหม่</h3>
@@ -222,7 +233,10 @@
         
         <div id="receipt-paper" class="receipt-zigzag w-80 p-6 text-gray-800 text-sm shadow-2xl rounded-t-lg mb-4 shrink-0">
             <div class="text-center mb-4">
-                <div class="text-4xl mb-1">🎱</div>
+                
+                <!-- แก้ไขโลโก้ในใบเสร็จ (ปรับเป็นสีเทาขาวดำเพื่อให้สมจริงเวลาพิมพ์) -->
+                <img src="icon-512.png" alt="โลโก้ร้าน" class="w-16 h-16 mx-auto mb-2 object-contain grayscale">
+                
                 <h2 class="font-bold text-xl tracking-wide">ดำรัส สนุ๊กเกอร์</h2>
                 <p class="text-xs text-gray-500 mt-1">ใบเสร็จรับเงิน (Receipt)</p>
             </div>
