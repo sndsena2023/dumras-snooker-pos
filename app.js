@@ -70,7 +70,6 @@ function loadDataLocally() {
 }
 loadDataLocally();
 
-// ตั้งเวลาอัปเดตหน้าจอทุกๆ 1 นาที เพื่อให้เวลาเล่นไหลไปเรื่อยๆ (Real-time Timer)
 setInterval(() => {
     if (currentStaff && !document.getElementById("dashboard-screen").classList.contains("hidden")) {
         renderTables();
@@ -78,7 +77,7 @@ setInterval(() => {
 }, 60000);
 
 // =========================================================
-// 4. ระบบ Login & Session (จดจำการล็อกอิน)
+// 4. ระบบ Login & Session
 // =========================================================
 function pressPin(num) {
     if (currentPin.length < 4) {
@@ -98,10 +97,7 @@ async function checkLogin() {
         if (!querySnapshot.empty) {
             const staffData = querySnapshot.docs[0].data();
             currentStaff = staffData;
-            
-            // [ใหม่] บันทึกการล็อกอินลงในเครื่อง
             localStorage.setItem("dumras_staff_session", JSON.stringify(staffData));
-            
             applyLoginState();
         } else {
             document.getElementById("pin-error").innerText = "รหัส PIN ไม่ถูกต้อง";
@@ -114,7 +110,6 @@ async function checkLogin() {
     }
 }
 
-// นำสถานะล็อกอินมาแสดงผล
 function applyLoginState() {
     document.getElementById("current-staff-name").innerText = `${currentStaff.name}`;
             
@@ -132,7 +127,6 @@ function applyLoginState() {
     renderTables();
 }
 
-// [ใหม่] โหลดสถานะการล็อกอินทันทีที่เปิดแอป
 function restoreSession() {
     const savedStaff = localStorage.getItem("dumras_staff_session");
     if (savedStaff) {
@@ -140,13 +134,11 @@ function restoreSession() {
         applyLoginState();
     }
 }
-restoreSession(); // เรียกใช้ทันที
+restoreSession();
 
 function logout() {
     currentStaff = null;
-    // [ใหม่] ลบข้อมูลล็อกอินออกจากเครื่องเมื่อกดออกระบบ
     localStorage.removeItem("dumras_staff_session");
-    
     document.getElementById("dashboard-screen").classList.add("hidden");
     document.getElementById("login-screen").classList.remove("hidden");
 }
@@ -268,7 +260,7 @@ function renderCurrentOrders() {
 }
 
 // =========================================================
-// 6. จัดการสินค้า และ จัดการพนักงาน (Admin Panel)
+// 6. จัดการสินค้า (เพิ่มลบแก้ไข) และ จัดการพนักงาน (Admin Panel)
 // =========================================================
 function switchAdminTab(tab) {
     const prodSec = document.getElementById("admin-section-products");
@@ -296,9 +288,18 @@ function closeProductManager() { document.getElementById("product-modal").classL
 
 function renderAdminProductList() {
     document.getElementById("admin-product-list").innerHTML = PRODUCTS.map(p => `
-        <div class="flex justify-between items-center bg-white border p-2 rounded">
-            <div><span class="font-bold text-sm">${p.name}</span><span class="text-xs text-gray-400 ml-2">(${p.category})</span></div>
-            <div class="text-sm font-bold text-purple-600">฿${p.price}</div>
+        <div class="flex justify-between items-center bg-white border p-2.5 rounded-xl shadow-sm">
+            <div>
+                <span class="font-bold text-sm text-gray-800">${p.name}</span>
+                <span class="text-xs text-gray-400 ml-1">(${p.category})</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <span class="text-sm font-bold text-purple-600">฿${p.price}</span>
+                <div class="border-l pl-3 flex gap-2">
+                    <button onclick="editProduct('${p.id}')" class="bg-blue-50 text-blue-500 hover:bg-blue-100 px-2 py-1 rounded text-xs font-medium transition">แก้ราคา</button>
+                    <button onclick="deleteProduct('${p.id}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2 py-1 rounded text-xs font-medium transition">ลบ</button>
+                </div>
+            </div>
         </div>
     `).join("");
 }
@@ -308,10 +309,36 @@ function addNewProduct() {
     const price = parseInt(document.getElementById("new-p-price").value);
     const category = document.getElementById("new-p-category").value;
     if (!name || isNaN(price)) { alert("ข้อมูลไม่ถูกต้อง"); return; }
-    PRODUCTS.push({ id: 'p' + (PRODUCTS.length + 1), name: name, price: price, category: category });
+    const newId = 'p' + new Date().getTime(); 
+    PRODUCTS.push({ id: newId, name: name, price: price, category: category });
     saveDataLocally(); 
     document.getElementById("new-p-name").value = ""; document.getElementById("new-p-price").value = "";
     renderAdminProductList();
+}
+
+function editProduct(id) {
+    const product = PRODUCTS.find(p => p.id === id);
+    if (!product) return;
+    const newPrice = prompt(`✏️ แก้ไขราคาสินค้า: ${product.name}\nราคาปัจจุบัน: ${product.price} บาท\n\nโปรดใส่ราคาใหม่:`, product.price);
+    if (newPrice !== null && newPrice.trim() !== "") {
+        const parsedPrice = parseInt(newPrice);
+        if (!isNaN(parsedPrice) && parsedPrice >= 0) {
+            product.price = parsedPrice;
+            saveDataLocally();
+            renderAdminProductList();
+        } else {
+            alert("❌ กรุณาใส่ราคาเป็นตัวเลขเท่านั้น");
+        }
+    }
+}
+
+function deleteProduct(id) {
+    const product = PRODUCTS.find(p => p.id === id);
+    if (confirm(`⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบ "${product.name}" ออกจากระบบ?`)) {
+        PRODUCTS = PRODUCTS.filter(p => p.id !== id);
+        saveDataLocally();
+        renderAdminProductList();
+    }
 }
 
 async function renderAdminStaffList() {
@@ -353,11 +380,9 @@ async function addNewStaff() {
     const pin = document.getElementById("new-s-pin").value.trim();
     const role = document.getElementById("new-s-role").value;
     if (!name || pin.length !== 4 || isNaN(pin)) { alert("กรุณากรอกชื่อและรหัส PIN 4 หลักให้ถูกต้อง"); return; }
-
     try {
         const checkPin = await db.collection("staff").where("pin", "==", pin).get();
         if(!checkPin.empty) { alert("รหัส PIN นี้มีผู้ใช้งานแล้ว กรุณาใช้รหัสอื่น"); return; }
-
         const staffId = 'S' + Math.floor(10 + Math.random() * 90);
         await db.collection("staff").doc(pin).set({ id: staffId, name: name, pin: pin, role: role });
         document.getElementById("new-s-name").value = ""; document.getElementById("new-s-pin").value = "";
@@ -433,6 +458,7 @@ function processPayment(method) {
         tableId: data.tableId,
         tableName: data.tableName,
         method: method,
+        hoursPlayed: data.hoursPlayed, // เก็บจำนวนชั่วโมงลงฐานข้อมูล
         timeFee: data.timeFee,
         itemsFee: data.itemsFee,
         grandTotal: data.grandTotal,
@@ -475,7 +501,7 @@ function saveReceiptImage() {
 function closeReceiptModal() { pendingCheckoutData = null; document.getElementById("receipt-modal").classList.add("hidden"); }
 
 // =========================================================
-// 8. ระบบรายงานยอดขาย (เฉพาะ Admin)
+// 8. ระบบรายงานยอดขาย (เพิ่มเช็คสต๊อกสินค้า & สถิติโต๊ะ)
 // =========================================================
 function openReportModal() {
     document.getElementById("report-modal").classList.remove("hidden");
@@ -492,13 +518,15 @@ function openReportModal() {
           let totalGrand = 0, totalCash = 0, totalTransfer = 0;
           let totalTable = 0, totalProduct = 0;
           let billsHtml = '';
+          
+          let tableStats = {};
+          let productStats = {};
 
           querySnapshot.forEach((doc) => {
               const data = doc.data();
               const gTotal = data.grandTotal || 0;
               
               totalGrand += gTotal;
-              
               if(data.method === 'เงินสด') totalCash += gTotal;
               if(data.method === 'เงินโอน') totalTransfer += gTotal;
               
@@ -512,6 +540,34 @@ function openReportModal() {
               totalTable += tFee;
               totalProduct += pFee;
               
+              // --- จัดเก็บสถิติโต๊ะ ---
+              const tName = data.tableName;
+              let hrs = data.hoursPlayed;
+              
+              // รองรับกรณีข้อมูลเก่าที่ไม่ได้บันทึก hoursPlayed 
+              if (hrs === undefined && data.items && data.items.length > 0) {
+                  const match = data.items[0].name.match(/ค่าโต๊ะ \(([\d.]+) ชม.\)/);
+                  hrs = match && match[1] ? parseFloat(match[1]) : 0;
+              } else if (hrs === undefined) {
+                  hrs = 0;
+              }
+
+              if (!tableStats[tName]) tableStats[tName] = { sessions: 0, hours: 0, total: 0 };
+              tableStats[tName].sessions += 1;
+              tableStats[tName].hours += hrs;
+              tableStats[tName].total += tFee;
+
+              // --- จัดเก็บสถิติสินค้า ---
+              if (data.items && data.items.length > 0) {
+                  data.items.forEach(item => {
+                      if (!item.name.startsWith("ค่าโต๊ะ")) {
+                          if (!productStats[item.name]) productStats[item.name] = { qty: 0, total: 0 };
+                          productStats[item.name].qty += item.qty;
+                          productStats[item.name].total += item.total;
+                      }
+                  });
+              }
+
               const dateTimeString = data.timestamp ? data.timestamp.toDate().toLocaleString('th-TH', { dateStyle: 'short', timeStyle: 'short' }) : '-';
               
               billsHtml += `
@@ -532,6 +588,42 @@ function openReportModal() {
               `;
           });
 
+          // สร้าง HTML สำหรับสถิติโต๊ะ
+          let tableStatsHtml = '<div class="grid grid-cols-2 gap-2 text-sm">';
+          for (let [tName, stat] of Object.entries(tableStats)) {
+              tableStatsHtml += `
+                  <div class="bg-orange-50 border border-orange-100 p-2 rounded-lg flex flex-col justify-between">
+                      <div class="flex justify-between mb-1">
+                          <span class="font-bold text-gray-800">${tName}</span>
+                          <span class="text-xs text-gray-500">${stat.sessions} บิล</span>
+                      </div>
+                      <div class="flex justify-between items-end">
+                          <span class="font-bold text-orange-600">${stat.hours.toFixed(1)} ชม.</span>
+                          <span class="text-xs text-gray-600">฿${stat.total}</span>
+                      </div>
+                  </div>
+              `;
+          }
+          tableStatsHtml += '</div>';
+          if(Object.keys(tableStats).length === 0) tableStatsHtml = '<p class="text-xs text-gray-400">ยังไม่มีการเปิดโต๊ะ</p>';
+
+          // สร้าง HTML สำหรับสถิติสินค้า (เรียงจากขายดีที่สุด)
+          const sortedProducts = Object.entries(productStats).sort((a, b) => b[1].qty - a[1].qty);
+          let productStatsHtml = '<div class="space-y-2 text-sm">';
+          for (let [pName, stat] of sortedProducts) {
+              productStatsHtml += `
+                  <div class="flex justify-between items-center border-b border-gray-100 pb-1.5">
+                      <div class="font-bold text-gray-700">${pName}</div>
+                      <div class="flex items-center gap-3">
+                          <span class="text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">x${stat.qty}</span>
+                          <span class="w-12 text-right font-bold text-gray-800">฿${stat.total}</span>
+                      </div>
+                  </div>
+              `;
+          }
+          productStatsHtml += '</div>';
+          if(sortedProducts.length === 0) productStatsHtml = '<p class="text-xs text-gray-400">ยังไม่มีการขายสินค้า</p>';
+
           if(querySnapshot.empty) {
               billsHtml = '<p class="text-center text-gray-400 py-6">ยังไม่มีรายการขายในวันนี้</p>';
           }
@@ -542,7 +634,7 @@ function openReportModal() {
                 <div class="text-4xl font-bold text-yellow-400">฿${totalGrand}</div>
             </div>
             
-            <div class="grid grid-cols-2 gap-3 mb-4">
+            <div class="grid grid-cols-2 gap-3 mb-6">
                 <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
                     <div class="text-xs text-green-600 font-bold mb-1">💵 เงินสด</div>
                     <div class="text-lg font-bold text-green-700">฿${totalCash}</div>
@@ -561,7 +653,13 @@ function openReportModal() {
                 </div>
             </div>
             
-            <h3 class="font-bold text-gray-700 mb-2 border-b pb-2 mt-4">📋 รายการบิลวันนี้:</h3>
+            <h3 class="font-bold text-orange-700 mb-2 border-b pb-1 text-sm">🎱 สรุปการใช้โต๊ะ (วันนี้)</h3>
+            <div class="mb-6">${tableStatsHtml}</div>
+
+            <h3 class="font-bold text-purple-700 mb-2 border-b pb-1 text-sm">🍔 สรุปยอดขายสินค้า (เช็คสต๊อก)</h3>
+            <div class="mb-6">${productStatsHtml}</div>
+            
+            <h3 class="font-bold text-gray-700 mb-2 border-b pb-1 text-sm">📋 ประวัติบิลทั้งหมด</h3>
             <div class="space-y-1">${billsHtml}</div>
           `;
       })
