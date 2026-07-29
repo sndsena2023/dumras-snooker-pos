@@ -17,9 +17,6 @@ const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
 const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์ที่นี่
 
-// =========================================================
-// 2. ตั้งค่าการคิดเงินค่าโต๊ะ
-// =========================================================
 const RATES = { NORMAL: 90, VIP: 120 }; // ราคาต่อชั่วโมง
 const MINIMUM_MINUTES = 30; // ขั้นต่ำกี่นาที
 
@@ -44,6 +41,54 @@ const activeTables = {};
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 
 // =========================================================
+// [เพิ่มใหม่] อัปโหลดเมนูอาหารไปไว้บน Cloud เพื่อให้ลูกค้าเห็น
+// =========================================================
+function syncProductsToCloud() {
+    db.collection("system").doc("products").set({ list: PRODUCTS }).catch(e => console.error("Sync Error", e));
+}
+
+// =========================================================
+// [เพิ่มใหม่] ระบบดักจับออเดอร์จากมือถือลูกค้า (Real-time)
+// =========================================================
+db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((snapshot) => {
+    snapshot.docChanges().forEach((change) => {
+        if (change.type === "added") {
+            const orderData = change.doc.data();
+            const tId = orderData.tableId;
+            
+            // ถ้าร้านยังไม่ได้กดเปิดโต๊ะ ให้เปิดอัตโนมัติ
+            if (!activeTables[tId]) {
+                 activeTables[tId] = { startTime: new Date(), orders: {} };
+            }
+            
+            // เพิ่มสินค้าลงในโต๊ะ
+            orderData.items.forEach(item => {
+                if (activeTables[tId].orders[item.detail.id]) {
+                    activeTables[tId].orders[item.detail.id].qty += item.qty;
+                } else {
+                    activeTables[tId].orders[item.detail.id] = { detail: item.detail, qty: item.qty };
+                }
+            });
+            
+            saveDataLocally();
+            
+            // รีเฟรชหน้าจอถ้าเข้าสู่ระบบอยู่
+            if (!document.getElementById("dashboard-screen").classList.contains("hidden")) {
+                renderTables();
+            }
+            
+            // เปลี่ยนสถานะบิลเพื่อไม่ให้เด้งซ้ำ
+            change.doc.ref.update({ status: "received" });
+            
+            // เด้งแจ้งเตือนพร้อมเสียง (ถ้าพนักงานล็อกอินอยู่)
+            if(currentStaff) {
+                alert(`🔔 มีออเดอร์ใหม่จากมือถือลูกค้า!\nโต๊ะ: ${orderData.tableName}`);
+            }
+        }
+    });
+});
+
+// =========================================================
 // 3. ฟังก์ชันเริ่มต้นและจำข้อมูล
 // =========================================================
 async function initializeDefaultStaff() {
@@ -58,6 +103,7 @@ initializeDefaultStaff();
 function saveDataLocally() {
     localStorage.setItem("dumras_tables", JSON.stringify(activeTables));
     localStorage.setItem("dumras_products", JSON.stringify(PRODUCTS));
+    syncProductsToCloud(); // อัปเดต Cloud ด้วยเวลาของเปลี่ยน
 }
 function loadDataLocally() {
     const savedProducts = localStorage.getItem("dumras_products");
@@ -71,25 +117,20 @@ function loadDataLocally() {
             activeTables[id] = parsedTables[id];
         }
     }
+    syncProductsToCloud(); // ดันข้อมูลขึ้น Cloud ตอนเริ่มแอป
 }
 loadDataLocally();
 
 setInterval(() => {
-    if (currentStaff && !document.getElementById("dashboard-screen").classList.contains("hidden")) {
-        renderTables();
-    }
+    if (currentStaff && !document.getElementById("dashboard-screen").classList.contains("hidden")) { renderTables(); }
 }, 60000);
 
 // =========================================================
 // 4. ระบบ Login
 // =========================================================
-function pressPin(num) {
-    if (currentPin.length < 4) { currentPin += num; updatePinUI(); if (currentPin.length === 4) checkLogin(); }
-}
+function pressPin(num) { if (currentPin.length < 4) { currentPin += num; updatePinUI(); if (currentPin.length === 4) checkLogin(); } }
 function clearPin() { currentPin = ""; updatePinUI(); document.getElementById("pin-error").innerText = ""; }
-function updatePinUI() {
-    for (let i = 1; i <= 4; i++) document.getElementById(`pin-${i}`).className = (i <= currentPin.length) ? "dot active" : "dot";
-}
+function updatePinUI() { for (let i = 1; i <= 4; i++) document.getElementById(`pin-${i}`).className = (i <= currentPin.length) ? "dot active" : "dot"; }
 
 async function checkLogin() {
     try {
@@ -102,9 +143,7 @@ async function checkLogin() {
         } else {
             document.getElementById("pin-error").innerText = "รหัส PIN ไม่ถูกต้อง"; setTimeout(clearPin, 800);
         }
-    } catch (error) {
-        document.getElementById("pin-error").innerText = "เกิดข้อผิดพลาดในการเชื่อมต่อ"; setTimeout(clearPin, 1000);
-    }
+    } catch (error) { document.getElementById("pin-error").innerText = "เกิดข้อผิดพลาด"; setTimeout(clearPin, 1000); }
 }
 
 function applyLoginState() {
@@ -118,8 +157,7 @@ function applyLoginState() {
     }
     document.getElementById("login-screen").classList.add("hidden");
     document.getElementById("dashboard-screen").classList.remove("hidden");
-    clearPin();
-    renderTables();
+    clearPin(); renderTables();
 }
 
 function restoreSession() {
@@ -195,8 +233,7 @@ function renderTables() {
                 }
             </div>
         `;
-        if (table.type === "NORMAL") normalContainer.innerHTML += cardHTML;
-        else vipContainer.innerHTML += cardHTML;
+        if (table.type === "NORMAL") normalContainer.innerHTML += cardHTML; else vipContainer.innerHTML += cardHTML;
     });
 }
 
@@ -218,8 +255,7 @@ function closeOrderModal() { document.getElementById("order-modal").classList.ad
 function addItemToTable(productId) {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
     const product = PRODUCTS.find(p => p.id === productId);
-    if (tableOrders[productId]) tableOrders[productId].qty += 1;
-    else tableOrders[productId] = { detail: product, qty: 1 };
+    if (tableOrders[productId]) tableOrders[productId].qty += 1; else tableOrders[productId] = { detail: product, qty: 1 };
     saveDataLocally(); renderCurrentOrders();
 }
 
@@ -237,32 +273,15 @@ function openExpenseModal() { document.getElementById("expense-modal").classList
 function closeExpenseModal() { document.getElementById("expense-modal").classList.add("hidden"); }
 
 function saveExpense() {
-    const desc = document.getElementById("expense-desc").value.trim();
-    const amount = parseFloat(document.getElementById("expense-amount").value);
-
-    if (!desc || isNaN(amount) || amount <= 0) {
-        alert("กรุณากรอกรายละเอียดและจำนวนเงินให้ถูกต้อง");
-        return;
-    }
-
-    db.collection("expenses").add({
-        description: desc,
-        amount: amount,
-        staffId: currentStaff.id,
-        staffName: currentStaff.name,
-        timestamp: firebase.firestore.FieldValue.serverTimestamp()
-    }).then(() => {
-        alert("บันทึกรายจ่ายสำเร็จ!");
-        document.getElementById("expense-desc").value = "";
-        document.getElementById("expense-amount").value = "";
-        closeExpenseModal();
-    }).catch((error) => {
-        alert("เกิดข้อผิดพลาดในการบันทึกรายจ่าย");
-    });
+    const desc = document.getElementById("expense-desc").value.trim(), amount = parseFloat(document.getElementById("expense-amount").value);
+    if (!desc || isNaN(amount) || amount <= 0) { alert("กรุณากรอกข้อมูลให้ถูกต้อง"); return; }
+    db.collection("expenses").add({ description: desc, amount: amount, staffId: currentStaff.id, staffName: currentStaff.name, timestamp: firebase.firestore.FieldValue.serverTimestamp() })
+    .then(() => { alert("บันทึกรายจ่ายสำเร็จ!"); document.getElementById("expense-desc").value = ""; document.getElementById("expense-amount").value = ""; closeExpenseModal(); })
+    .catch((error) => { alert("เกิดข้อผิดพลาด"); });
 }
 
 // =========================================================
-// 7. จัดการร้านค้า (สินค้า & พนักงาน)
+// 7. จัดการร้านค้า
 // =========================================================
 function switchAdminTab(tab) {
     const prodSec = document.getElementById("admin-section-products"), staffSec = document.getElementById("admin-section-staff");
@@ -310,9 +329,7 @@ function editProduct(id) {
         if (!isNaN(parsed) && parsed >= 0) { product.price = parsed; saveDataLocally(); renderAdminProductList(); } else alert("❌ ราคาต้องเป็นตัวเลข");
     }
 }
-function deleteProduct(id) {
-    if (confirm(`⚠️ ต้องการลบสินค้านี้ใช่หรือไม่?`)) { PRODUCTS = PRODUCTS.filter(p => p.id !== id); saveDataLocally(); renderAdminProductList(); }
-}
+function deleteProduct(id) { if (confirm(`⚠️ ต้องการลบสินค้านี้ใช่หรือไม่?`)) { PRODUCTS = PRODUCTS.filter(p => p.id !== id); saveDataLocally(); renderAdminProductList(); } }
 
 async function renderAdminStaffList() {
     const listDiv = document.getElementById("admin-staff-list"); listDiv.innerHTML = '<p class="text-gray-400 text-sm">กำลังโหลด...</p>';
@@ -333,13 +350,12 @@ async function addNewStaff() {
     if (!name || pin.length !== 4 || isNaN(pin)) { alert("รหัส PIN ต้องมี 4 หลัก"); return; }
     const checkPin = await db.collection("staff").where("pin", "==", pin).get();
     if(!checkPin.empty) { alert("PIN ซ้ำ"); return; }
-    await db.collection("staff").doc(pin).set({ id: 'S' + Math.floor(10 + Math.random() * 90), name: name, pin: pin, role: role });
-    alert("สำเร็จ!"); renderAdminStaffList();
+    await db.collection("staff").doc(pin).set({ id: 'S' + Math.floor(10 + Math.random() * 90), name: name, pin: pin, role: role }); alert("สำเร็จ!"); renderAdminStaffList();
 }
 async function deleteStaff(pin) { if(confirm("ลบพนักงานคนนี้?")) { await db.collection("staff").doc(pin).delete(); renderAdminStaffList(); } }
 
 // =========================================================
-// 8. ชำระเงิน และ บิล (คิดเงินตามจริงเป็น "นาที")
+// 8. ชำระเงิน และ บิล
 // =========================================================
 function openCheckoutModal(tableId, tableName, tableType) {
     const tableData = activeTables[tableId];
@@ -360,25 +376,15 @@ function openCheckoutModal(tableId, tableName, tableType) {
     const receiptItems = [{ name: `ค่าโต๊ะ (${timeString})`, qty: 1, total: timeFee }];
     
     if(tableData.orders) {
-        Object.values(tableData.orders).forEach(item => { 
-            const total = item.detail.price * item.qty; 
-            itemsFee += total; 
-            receiptItems.push({ name: item.detail.name, qty: item.qty, total: total }); 
-        });
+        Object.values(tableData.orders).forEach(item => { const total = item.detail.price * item.qty; itemsFee += total; receiptItems.push({ name: item.detail.name, qty: item.qty, total: total }); });
     }
     
     const grandTotal = timeFee + itemsFee;
     pendingCheckoutData = { tableId, tableName, hoursPlayed, timeFee, itemsFee, grandTotal, receiptItems };
     
-    document.getElementById("co-table").innerText = tableName; 
-    document.getElementById("co-time").innerText = timeString; 
-    document.getElementById("co-fee-table").innerText = timeFee; 
-    document.getElementById("co-fee-items").innerText = itemsFee; 
-    document.getElementById("co-total").innerText = grandTotal;
-    
+    document.getElementById("co-table").innerText = tableName; document.getElementById("co-time").innerText = timeString; document.getElementById("co-fee-table").innerText = timeFee; document.getElementById("co-fee-items").innerText = itemsFee; document.getElementById("co-total").innerText = grandTotal;
     document.getElementById("checkout-modal").classList.remove("hidden");
 }
-
 function closeCheckoutModal() { document.getElementById("checkout-modal").classList.add("hidden"); }
 
 function processPayment(method) {
@@ -407,43 +413,32 @@ function saveReceiptImage() { html2canvas(document.getElementById("receipt-paper
 function closeReceiptModal() { document.getElementById("receipt-modal").classList.add("hidden"); }
 
 // =========================================================
-// 9. ระบบบัญชี และการกดดูรายละเอียดย่อยแบบซ่อน
+// 9. ระบบบัญชี และรายงาน
 // =========================================================
 function openReportModal() {
     document.getElementById("report-modal").classList.remove("hidden");
     const datePicker = document.getElementById("report-date-picker");
     if (!datePicker.value) {
         const today = new Date();
-        const yyyy = today.getFullYear();
-        const mm = String(today.getMonth() + 1).padStart(2, '0');
-        const dd = String(today.getDate()).padStart(2, '0');
-        datePicker.value = `${yyyy}-${mm}-${dd}`;
+        datePicker.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     }
     loadReportData();
 }
 
-// ฟังก์ชันเปิด/ปิดกล่องข้อมูลเจาะลึก (โต๊ะ และ สินค้า)
 function toggleReportSection(sectionId) {
-    const sections = ['detail-table', 'detail-product'];
+    const sections = ['detail-income', 'detail-expense', 'detail-table', 'detail-product'];
     sections.forEach(id => {
-        if (id !== sectionId) {
-            const el = document.getElementById(id);
-            if (el) el.classList.add('hidden');
-        }
+        if (id !== sectionId) { const el = document.getElementById(id); if (el) el.classList.add('hidden'); }
     });
-
     const target = document.getElementById(sectionId);
     if (target) {
         target.classList.toggle('hidden');
-        if(!target.classList.contains('hidden')) {
-            target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-        }
+        if(!target.classList.contains('hidden')) target.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 }
 
 function loadReportData() {
     document.getElementById("report-content").innerHTML = '<p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูลบัญชี...</p>';
-    
     const selectedDateStr = document.getElementById("report-date-picker").value;
     const targetDate = new Date(selectedDateStr);
     const startOfDay = new Date(targetDate); startOfDay.setHours(0, 0, 0, 0);
@@ -453,201 +448,82 @@ function loadReportData() {
         db.collection("transactions").where("timestamp", ">=", startOfDay).where("timestamp", "<=", endOfDay).orderBy("timestamp", "desc").get(),
         db.collection("expenses").where("timestamp", ">=", startOfDay).where("timestamp", "<=", endOfDay).orderBy("timestamp", "desc").get()
     ]).then(([transSnapshot, expSnapshot]) => {
-        
-        let totalIncome = 0, totalExpense = 0;
-        let totalCash = 0, totalTransfer = 0;
-        let totalTable = 0, totalProduct = 0;
-        
-        let tableStats = {};
-        let productStats = {};
-
-        let billsHtml = '', expensesHtml = '';
+        let totalIncome = 0, totalExpense = 0, totalCash = 0, totalTransfer = 0, totalTable = 0, totalProduct = 0;
+        let tableStats = {}, productStats = {}, billsHtml = '', expensesHtml = '';
         
         transSnapshot.forEach((doc) => {
-            const data = doc.data();
-            const gTotal = data.grandTotal || 0;
-            totalIncome += gTotal;
-            
-            if(data.method === 'เงินสด') totalCash += gTotal;
-            if(data.method === 'เงินโอน') totalTransfer += gTotal;
+            const data = doc.data(); const gTotal = data.grandTotal || 0; totalIncome += gTotal;
+            if(data.method === 'เงินสด') totalCash += gTotal; if(data.method === 'เงินโอน') totalTransfer += gTotal;
 
-            let tFee = data.timeFee || 0;
-            let pFee = data.itemsFee || 0;
-            if (tFee === 0 && pFee === 0 && data.items && data.items.length > 0) {
-                tFee = data.items[0].total || 0;
-                pFee = gTotal - tFee;
-            }
-            totalTable += tFee;
-            totalProduct += pFee;
+            let tFee = data.timeFee || 0, pFee = data.itemsFee || 0;
+            if (tFee === 0 && pFee === 0 && data.items && data.items.length > 0) { tFee = data.items[0].total || 0; pFee = gTotal - tFee; }
+            totalTable += tFee; totalProduct += pFee;
 
-            const tName = data.tableName;
-            let hrs = data.hoursPlayed;
-            if (hrs === undefined && data.items && data.items.length > 0) {
-                const match = data.items[0].name.match(/ค่าโต๊ะ \(([\d.]+) ชม.\)/);
-                hrs = match && match[1] ? parseFloat(match[1]) : 0;
-            } else if (hrs === undefined) hrs = 0;
-
+            const tName = data.tableName; let hrs = data.hoursPlayed;
+            if (hrs === undefined && data.items && data.items.length > 0) { const match = data.items[0].name.match(/ค่าโต๊ะ \(([\d.]+) ชม.\)/); hrs = match && match[1] ? parseFloat(match[1]) : 0; } else if (hrs === undefined) hrs = 0;
             if (!tableStats[tName]) tableStats[tName] = { sessions: 0, hours: 0, total: 0 };
-            tableStats[tName].sessions += 1;
-            tableStats[tName].hours += hrs;
-            tableStats[tName].total += tFee;
+            tableStats[tName].sessions += 1; tableStats[tName].hours += hrs; tableStats[tName].total += tFee;
 
             if (data.items && data.items.length > 0) {
                 data.items.forEach(item => {
                     if (!item.name.startsWith("ค่าโต๊ะ")) {
                         if (!productStats[item.name]) productStats[item.name] = { qty: 0, total: 0 };
-                        productStats[item.name].qty += item.qty;
-                        productStats[item.name].total += item.total;
+                        productStats[item.name].qty += item.qty; productStats[item.name].total += item.total;
                     }
                 });
             }
             
             const timeStr = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '-';
-            billsHtml += `
-                <div class="border-b border-gray-100 py-2 text-sm">
-                    <div class="flex justify-between items-center mb-1">
-                        <div>
-                            <span class="font-bold text-gray-700">${data.tableName}</span>
-                            <span class="text-xs text-gray-400 ml-1">(${timeStr})</span>
-                        </div>
-                        <div class="font-bold text-green-600 text-lg">+฿${gTotal}</div>
-                    </div>
-                    <div class="flex justify-between items-center text-xs text-gray-500 mb-1">
-                        <div>รับโดย: ${data.staffName}</div>
-                        <div class="font-bold px-2 rounded-full ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div>
-                    </div>
-                    <div class="flex gap-2 text-xs text-gray-500 bg-white border border-gray-100 p-1.5 rounded">
-                        <span class="flex-1">🎱 โต๊ะ: ฿${tFee}</span>
-                        <span class="flex-1">🍔 ของ: ฿${pFee}</span>
-                    </div>
-                </div>
-            `;
+            billsHtml += `<div class="border-b border-gray-100 py-2 text-sm"><div class="flex justify-between items-center mb-1"><div><span class="font-bold text-gray-700">${data.tableName}</span><span class="text-xs text-gray-400 ml-1">(${timeStr})</span></div><div class="font-bold text-green-600 text-lg">+฿${gTotal}</div></div><div class="flex justify-between items-center text-xs text-gray-500 mb-1"><div>รับโดย: ${data.staffName}</div><div class="font-bold px-2 rounded-full ${data.method === 'เงินสด' ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'}">${data.method}</div></div><div class="flex gap-2 text-xs text-gray-500 bg-white border border-gray-100 p-1.5 rounded"><span class="flex-1">🎱 โต๊ะ: ฿${tFee}</span><span class="flex-1">🍔 ของ: ฿${pFee}</span></div></div>`;
         });
         if(transSnapshot.empty) billsHtml = '<p class="text-sm text-gray-400 py-2 text-center">ไม่มีรายรับ</p>';
 
         expSnapshot.forEach((doc) => {
-            const data = doc.data();
-            totalExpense += (data.amount || 0);
-            
+            const data = doc.data(); totalExpense += (data.amount || 0);
             const timeStr = data.timestamp ? data.timestamp.toDate().toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'}) : '-';
-            expensesHtml += `
-                <div class="flex justify-between items-center border-b border-gray-100 py-2 text-sm">
-                    <div>
-                        <div class="font-bold text-gray-700">${data.description} <span class="text-xs font-normal text-gray-400 ml-1">(${timeStr})</span></div>
-                        <div class="text-xs text-gray-500">จ่ายโดย: ${data.staffName}</div>
-                    </div>
-                    <div class="font-bold text-red-500 text-lg">-฿${data.amount}</div>
-                </div>
-            `;
+            expensesHtml += `<div class="flex justify-between items-center border-b border-gray-100 py-2 text-sm"><div><div class="font-bold text-gray-700">${data.description} <span class="text-xs font-normal text-gray-400 ml-1">(${timeStr})</span></div><div class="text-xs text-gray-500">จ่ายโดย: ${data.staffName}</div></div><div class="font-bold text-red-500 text-lg">-฿${data.amount}</div></div>`;
         });
         if(expSnapshot.empty) expensesHtml = '<p class="text-sm text-gray-400 py-2 text-center">ไม่มีรายจ่าย</p>';
 
         let tableStatsHtml = '<div class="grid grid-cols-2 gap-2 text-sm">';
-        for (let [tName, stat] of Object.entries(tableStats)) {
-            tableStatsHtml += `
-                <div class="bg-white border border-orange-100 p-2 rounded-lg flex flex-col justify-between shadow-sm">
-                    <div class="flex justify-between mb-1">
-                        <span class="font-bold text-gray-800">${tName}</span><span class="text-xs text-gray-500">${stat.sessions} บิล</span>
-                    </div>
-                    <div class="flex justify-between items-end">
-                        <span class="font-bold text-orange-600">${stat.hours.toFixed(1)} ชม.</span><span class="text-xs text-gray-600">฿${stat.total}</span>
-                    </div>
-                </div>`;
-        }
-        tableStatsHtml += '</div>';
+        for (let [tName, stat] of Object.entries(tableStats)) { tableStatsHtml += `<div class="bg-white border border-orange-100 p-2 rounded-lg flex flex-col justify-between shadow-sm"><div class="flex justify-between mb-1"><span class="font-bold text-gray-800">${tName}</span><span class="text-xs text-gray-500">${stat.sessions} บิล</span></div><div class="flex justify-between items-end"><span class="font-bold text-orange-600">${stat.hours.toFixed(1)} ชม.</span><span class="text-xs text-gray-600">฿${stat.total}</span></div></div>`; } tableStatsHtml += '</div>';
         if(Object.keys(tableStats).length === 0) tableStatsHtml = '<p class="text-xs text-gray-400 text-center">ยังไม่มีการเปิดโต๊ะ</p>';
 
         const sortedProducts = Object.entries(productStats).sort((a, b) => b[1].qty - a[1].qty);
         let productStatsHtml = '<div class="space-y-1 text-sm bg-white p-2 rounded-lg shadow-sm border border-purple-100">';
-        for (let [pName, stat] of sortedProducts) {
-            productStatsHtml += `
-                <div class="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0 last:pb-0">
-                    <div class="font-bold text-gray-700">${pName}</div>
-                    <div class="flex items-center gap-3">
-                        <span class="text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">x${stat.qty}</span>
-                        <span class="w-12 text-right font-bold text-gray-800">฿${stat.total}</span>
-                    </div>
-                </div>`;
-        }
-        productStatsHtml += '</div>';
+        for (let [pName, stat] of sortedProducts) { productStatsHtml += `<div class="flex justify-between items-center border-b border-gray-50 pb-1.5 last:border-0 last:pb-0"><div class="font-bold text-gray-700">${pName}</div><div class="flex items-center gap-3"><span class="text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-md">x${stat.qty}</span><span class="w-12 text-right font-bold text-gray-800">฿${stat.total}</span></div></div>`; } productStatsHtml += '</div>';
         if(sortedProducts.length === 0) productStatsHtml = '<p class="text-xs text-gray-400 text-center">ยังไม่มีการขายสินค้า</p>';
 
-        const netProfit = totalIncome - totalExpense;
-        const profitColorClass = netProfit >= 0 ? 'text-green-400' : 'text-red-400';
+        const netProfit = totalIncome - totalExpense; const profitColorClass = netProfit >= 0 ? 'text-green-400' : 'text-red-400';
 
         document.getElementById("report-content").innerHTML = `
-            <!-- สรุปกำไรสุทธิ -->
             <div class="bg-gray-800 text-white p-5 rounded-2xl shadow-lg mb-4 relative overflow-hidden">
                 <div class="relative z-10 flex flex-col items-center">
                     <p class="text-sm text-gray-300 mb-1">ยอดคงเหลือสุทธิ (Net Balance)</p>
                     <p class="text-4xl font-bold ${profitColorClass} mb-4">฿${netProfit.toLocaleString()}</p>
                     <div class="w-full grid grid-cols-2 gap-4 border-t border-gray-600 pt-4 mt-2">
-                        <div class="text-center p-2">
-                            <p class="text-xs text-gray-400 mb-1">รายรับทั้งหมด</p>
-                            <p class="text-xl font-bold text-green-400">฿${totalIncome.toLocaleString()}</p>
-                        </div>
-                        <div class="text-center border-l border-gray-600 p-2">
-                            <p class="text-xs text-gray-400 mb-1">รายจ่ายทั้งหมด</p>
-                            <p class="text-xl font-bold text-red-400">฿${totalExpense.toLocaleString()}</p>
-                        </div>
+                        <div class="text-center cursor-pointer hover:bg-gray-700 p-2 rounded-lg transition" onclick="toggleReportSection('detail-income')"><p class="text-xs text-gray-400 mb-1">รายรับทั้งหมด <span class="text-[10px] text-gray-500">(คลิกดูบิล)</span></p><p class="text-xl font-bold text-green-400">฿${totalIncome.toLocaleString()}</p></div>
+                        <div class="text-center border-l border-gray-600 cursor-pointer hover:bg-gray-700 p-2 rounded-lg transition" onclick="toggleReportSection('detail-expense')"><p class="text-xs text-gray-400 mb-1">รายจ่ายทั้งหมด <span class="text-[10px] text-gray-500">(คลิกดูบิล)</span></p><p class="text-xl font-bold text-red-400">฿${totalExpense.toLocaleString()}</p></div>
                     </div>
                 </div>
             </div>
-
-            <!-- กล่องแยกรายละเอียด 4 ส่วน -->
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-                <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm">
-                    <div class="text-[10px] text-green-600 font-bold mb-1">💵 เงินสด</div>
-                    <div class="text-sm font-bold text-green-700">฿${totalCash}</div>
-                </div>
-                <div class="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center shadow-sm">
-                    <div class="text-[10px] text-blue-600 font-bold mb-1">📱 เงินโอน</div>
-                    <div class="text-sm font-bold text-blue-700">฿${totalTransfer}</div>
-                </div>
-                
-                <div class="bg-orange-50 p-3 rounded-xl border border-orange-200 text-center shadow-sm cursor-pointer hover:bg-orange-100 transition relative group" onclick="toggleReportSection('detail-table')">
-                    <div class="text-[10px] text-orange-600 font-bold mb-1">🎱 รวมค่าโต๊ะ <span class="text-[9px] font-normal text-orange-500">(คลิกดู)</span></div>
-                    <div class="text-sm font-bold text-orange-700">฿${totalTable}</div>
-                </div>
-                
-                <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-center shadow-sm cursor-pointer hover:bg-purple-100 transition relative group" onclick="toggleReportSection('detail-product')">
-                    <div class="text-[10px] text-purple-600 font-bold mb-1">🍔 รวมค่าสินค้า <span class="text-[9px] font-normal text-purple-500">(คลิกดู)</span></div>
-                    <div class="text-sm font-bold text-purple-700">฿${totalProduct}</div>
-                </div>
+                <div class="bg-green-50 p-3 rounded-xl border border-green-200 text-center shadow-sm"><div class="text-[10px] text-green-600 font-bold mb-1">💵 เงินสด</div><div class="text-sm font-bold text-green-700">฿${totalCash}</div></div>
+                <div class="bg-blue-50 p-3 rounded-xl border border-blue-200 text-center shadow-sm"><div class="text-[10px] text-blue-600 font-bold mb-1">📱 เงินโอน</div><div class="text-sm font-bold text-blue-700">฿${totalTransfer}</div></div>
+                <div class="bg-orange-50 p-3 rounded-xl border border-orange-200 text-center shadow-sm cursor-pointer hover:bg-orange-100 transition relative group" onclick="toggleReportSection('detail-table')"><div class="text-[10px] text-orange-600 font-bold mb-1">🎱 รวมค่าโต๊ะ <span class="text-[9px] font-normal text-orange-500">(คลิกดู)</span></div><div class="text-sm font-bold text-orange-700">฿${totalTable}</div></div>
+                <div class="bg-purple-50 p-3 rounded-xl border border-purple-200 text-center shadow-sm cursor-pointer hover:bg-purple-100 transition relative group" onclick="toggleReportSection('detail-product')"><div class="text-[10px] text-purple-600 font-bold mb-1">🍔 รวมค่าสินค้า <span class="text-[9px] font-normal text-purple-500">(คลิกดู)</span></div><div class="text-sm font-bold text-purple-700">฿${totalProduct}</div></div>
             </div>
 
-            <!-- ================= กล่องรายละเอียดที่ถูกซ่อน (แสดงเมื่อคลิก) ================= -->
-            
-            <!-- กล่อง: สถิติโต๊ะ -->
-            <div id="detail-table" class="hidden bg-orange-50 border border-orange-200 p-4 rounded-xl mb-4 relative shadow-inner">
-                <button onclick="toggleReportSection('detail-table')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button>
-                <h3 class="font-bold text-orange-700 mb-3 border-b border-orange-200 pb-2 flex items-center gap-2 text-sm">🎱 สรุปการใช้โต๊ะ (ชั่วโมง/บิล)</h3>
-                ${tableStatsHtml}
-            </div>
+            <div id="detail-income" class="hidden bg-green-50 border border-green-200 p-4 rounded-xl mb-4 relative shadow-inner"><button onclick="toggleReportSection('detail-income')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button><h3 class="font-bold text-green-700 mb-3 border-b border-green-200 pb-2 flex items-center gap-2 text-sm"><span>📥</span> ประวัติรับเงิน</h3><div class="space-y-1">${billsHtml}</div></div>
+            <div id="detail-expense" class="hidden bg-red-50 border border-red-200 p-4 rounded-xl mb-4 relative shadow-inner"><button onclick="toggleReportSection('detail-expense')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button><h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2 text-sm"><span>💸</span> ประวัติจ่ายเงิน</h3><div class="space-y-1">${expensesHtml}</div></div>
+            <div id="detail-table" class="hidden bg-orange-50 border border-orange-200 p-4 rounded-xl mb-4 relative shadow-inner"><button onclick="toggleReportSection('detail-table')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button><h3 class="font-bold text-orange-700 mb-3 border-b border-orange-200 pb-2 flex items-center gap-2 text-sm">🎱 สรุปการใช้โต๊ะ (ชั่วโมง/บิล)</h3>${tableStatsHtml}</div>
+            <div id="detail-product" class="hidden bg-purple-50 border border-purple-200 p-4 rounded-xl mb-4 relative shadow-inner"><button onclick="toggleReportSection('detail-product')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button><h3 class="font-bold text-purple-700 mb-3 border-b border-purple-200 pb-2 flex items-center gap-2 text-sm">🍔 สรุปยอดขายสินค้า (เช็คสต๊อก)</h3>${productStatsHtml}</div>
 
-            <!-- กล่อง: สถิติสินค้า (เช็คสต๊อก) -->
-            <div id="detail-product" class="hidden bg-purple-50 border border-purple-200 p-4 rounded-xl mb-4 relative shadow-inner">
-                <button onclick="toggleReportSection('detail-product')" class="absolute top-3 right-3 text-gray-400 hover:text-red-500">✕</button>
-                <h3 class="font-bold text-purple-700 mb-3 border-b border-purple-200 pb-2 flex items-center gap-2 text-sm">🍔 สรุปยอดขายสินค้า (เช็คสต๊อก)</h3>
-                ${productStatsHtml}
-            </div>
-
-            <!-- ================= ประวัติรับ-จ่าย (แสดงตลอดด้านล่าง) ================= -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
-                    <h3 class="font-bold text-green-700 mb-3 border-b pb-2 flex items-center gap-2 text-sm"><span>📥</span> ประวัติรับเงิน</h3>
-                    <div class="space-y-1">${billsHtml}</div>
-                </div>
-                <div class="bg-red-50 p-4 rounded-xl border border-red-100">
-                    <h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2 text-sm"><span>💸</span> ประวัติจ่ายเงิน</h3>
-                    <div class="space-y-1">${expensesHtml}</div>
-                </div>
+                <div class="bg-gray-50 p-4 rounded-xl border border-gray-200"><h3 class="font-bold text-green-700 mb-3 border-b pb-2 flex items-center gap-2 text-sm"><span>📥</span> ประวัติรับเงินล่าสุด</h3><div class="space-y-1">${billsHtml}</div></div>
+                <div class="bg-red-50 p-4 rounded-xl border border-red-100"><h3 class="font-bold text-red-700 mb-3 border-b border-red-200 pb-2 flex items-center gap-2 text-sm"><span>💸</span> ประวัติจ่ายเงินล่าสุด</h3><div class="space-y-1">${expensesHtml}</div></div>
             </div>
         `;
-    }).catch((error) => {
-        console.error("Error loading accounting data: ", error);
-        document.getElementById("report-content").innerHTML = '<p class="text-center text-red-500 py-10">โหลดข้อมูลไม่สำเร็จ</p>';
-    });
+    }).catch(e => { document.getElementById("report-content").innerHTML = '<p class="text-center text-red-500 py-10">โหลดข้อมูลไม่สำเร็จ</p>'; });
 }
-
 function closeReportModal() { document.getElementById("report-modal").classList.add("hidden"); }
