@@ -27,7 +27,6 @@ const TABLES = [
     { id: "V3", type: "VIP", name: "VIP 3" }
 ];
 
-// เพิ่ม inStock ลงในโครงสร้างสินค้า (ถ้าไม่มีถือว่า true)
 let PRODUCTS = [
     { id: 'p1', name: 'มาม่า', category: 'snack', price: 15, inStock: true },
     { id: 'p2', name: 'ขนมขบเคี้ยว', category: 'snack', price: 20, inStock: true },
@@ -40,14 +39,14 @@ let PRODUCTS = [
 
 const activeTables = {}; 
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
-let incomingOrdersData = []; // เก็บออเดอร์ค้างรับ
+let incomingOrdersData = []; 
 
 function syncProductsToCloud() {
     db.collection("system").doc("products").set({ list: PRODUCTS }).catch(e => console.error("Sync Error", e));
 }
 
 // =========================================================
-// [อัปเดต] ระบบจัดการออเดอร์จากมือถือลูกค้า (รับ/ยกเลิก)
+// [อัปเดต] ระบบจัดการออเดอร์ พร้อมปุ่มลบรายการที่ของหมด
 // =========================================================
 db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((snapshot) => {
     incomingOrdersData = [];
@@ -61,14 +60,13 @@ db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((sn
         incomingOrdersData.push({ id: doc.id, ...doc.data() });
     });
     
-    // อัปเดต UI ปุ่มกระดิ่ง
     const badge = document.getElementById("pending-badge");
     const btn = document.getElementById("btn-pending-orders");
+    
     if(incomingOrdersData.length > 0) {
         btn.classList.remove("hidden");
         badge.innerText = incomingOrdersData.length;
         
-        // ถ้าระบบเปิดอยู่ และมีออเดอร์ใหม่ ให้พูดเตือน
         if(isNewAdded && currentStaff && 'speechSynthesis' in window) {
             const lastOrder = incomingOrdersData[incomingOrdersData.length-1];
             const speech = new SpeechSynthesisUtterance(`มีออเดอร์เข้าครับ โต๊ะ ${lastOrder.tableName}`);
@@ -78,22 +76,16 @@ db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((sn
         }
     } else {
         btn.classList.add("hidden");
-        closePendingModal(); // ปิดถ้าไม่มีออเดอร์แล้ว
+        closePendingModal(); 
     }
 
-    // ถ้าเปิดหน้าต่างคิวออเดอร์อยู่ ให้อัปเดตรายการ
     if (!document.getElementById("pending-modal").classList.contains("hidden")) {
         renderPendingOrders();
     }
 });
 
-function openPendingModal() {
-    document.getElementById("pending-modal").classList.remove("hidden");
-    renderPendingOrders();
-}
-function closePendingModal() {
-    document.getElementById("pending-modal").classList.add("hidden");
-}
+function openPendingModal() { document.getElementById("pending-modal").classList.remove("hidden"); renderPendingOrders(); }
+function closePendingModal() { document.getElementById("pending-modal").classList.add("hidden"); }
 
 function renderPendingOrders() {
     const container = document.getElementById("pending-orders-list");
@@ -105,8 +97,14 @@ function renderPendingOrders() {
     let html = '';
     incomingOrdersData.forEach(order => {
         let itemsHtml = '';
-        order.items.forEach(it => {
-            itemsHtml += `<div class="flex justify-between text-sm"><span class="text-gray-700">- ${it.detail.name}</span><span class="font-bold text-blue-600">x${it.qty}</span></div>`;
+        order.items.forEach((it, index) => {
+            itemsHtml += `
+                <div class="flex justify-between items-center text-sm border-b border-yellow-100/50 py-1.5 last:border-0">
+                    <span class="text-gray-700">- ${it.detail.name} <span class="font-bold text-blue-600 ml-1">x${it.qty}</span></span>
+                    
+                    <!-- [ใหม่] ปุ่มกดตัดสินค้าบางตัวออกกรณีของหมด -->
+                    <button onclick="removePendingItem('${order.id}', ${index})" class="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 transition font-bold">ตัดออก (หมด)</button>
+                </div>`;
         });
 
         html += `
@@ -115,10 +113,10 @@ function renderPendingOrders() {
                     <h3 class="font-bold text-lg text-yellow-700">📍 ${order.tableName}</h3>
                     <span class="text-xs text-gray-500">รอรับออเดอร์...</span>
                 </div>
-                <div class="mb-4 space-y-1">${itemsHtml}</div>
+                <div class="mb-4 space-y-1 bg-white p-2 rounded-lg border border-yellow-100">${itemsHtml}</div>
                 <div class="flex gap-2">
-                    <button onclick="acceptOrder('${order.id}')" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-lg shadow">✅ รับออเดอร์</button>
-                    <button onclick="rejectOrder('${order.id}')" class="flex-1 bg-red-100 hover:bg-red-200 text-red-600 font-bold py-2 rounded-lg border border-red-200">❌ ยกเลิก/ของหมด</button>
+                    <button onclick="acceptOrder('${order.id}')" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-lg shadow">✅ รับออเดอร์นี้</button>
+                    <button onclick="rejectOrder('${order.id}')" class="flex-1 bg-red-100 hover:bg-red-200 text-red-600 font-bold py-2 rounded-lg border border-red-200">❌ ยกเลิกทั้งหมด</button>
                 </div>
             </div>
         `;
@@ -126,17 +124,29 @@ function renderPendingOrders() {
     container.innerHTML = html;
 }
 
+// [ใหม่] ฟังก์ชันลบสินค้าแยกชิ้นจากคิวออเดอร์
+window.removePendingItem = function(orderId, itemIndex) {
+    const order = incomingOrdersData.find(o => o.id === orderId);
+    if(order) {
+        order.items.splice(itemIndex, 1);
+        
+        // ถ้าตัดออกหมดทุกชิ้น ก็ถือว่ายกเลิกออเดอร์ทั้งหมด
+        if(order.items.length === 0) {
+            rejectOrder(orderId);
+        } else {
+            // อัปเดตข้อมูลขึ้น Firebase ให้ลูกค้าเห็นว่าโดนตัดของ
+            db.collection("incoming_orders").doc(orderId).update({ items: order.items });
+        }
+    }
+};
+
 function acceptOrder(orderId) {
     const order = incomingOrdersData.find(o => o.id === orderId);
     if(!order) return;
     
     const tId = order.tableId;
-    // ถ้าโต๊ะยังไม่เปิด ให้เปิดให้อัตโนมัติ
-    if (!activeTables[tId]) {
-         activeTables[tId] = { startTime: new Date(), orders: {} };
-    }
+    if (!activeTables[tId]) { activeTables[tId] = { startTime: new Date(), orders: {} }; }
     
-    // โยนของเข้าโต๊ะ
     order.items.forEach(item => {
         if (activeTables[tId].orders[item.detail.id]) {
             activeTables[tId].orders[item.detail.id].qty += item.qty;
@@ -147,12 +157,12 @@ function acceptOrder(orderId) {
     
     saveDataLocally();
     renderTables();
-    db.collection("incoming_orders").doc(orderId).update({ status: "accepted" }); // ลูกค้าจะเห็นว่าสำเร็จ
+    db.collection("incoming_orders").doc(orderId).update({ status: "accepted" }); 
 }
 
 function rejectOrder(orderId) {
-    if(confirm("แน่ใจหรือไม่ที่จะปฏิเสธ/ยกเลิกออเดอร์นี้? (ระบบจะแจ้งเตือนลูกค้าว่าสินค้าหมด)")) {
-        db.collection("incoming_orders").doc(orderId).update({ status: "rejected" }); // ลูกค้าจะเห็นว่าโดนยกเลิก
+    if(confirm("แน่ใจหรือไม่ที่จะยกเลิกออเดอร์นี้ทั้งหมด?")) {
+        db.collection("incoming_orders").doc(orderId).update({ status: "rejected" }); 
     }
 }
 
@@ -177,7 +187,6 @@ function loadDataLocally() {
     const savedProducts = localStorage.getItem("dumras_products");
     if (savedProducts) PRODUCTS = JSON.parse(savedProducts);
 
-    // ป้องกันข้อมูลเก่าที่ไม่มี inStock
     PRODUCTS.forEach(p => { if(p.inStock === undefined) p.inStock = true; });
 
     const savedTables = localStorage.getItem("dumras_tables");
@@ -244,7 +253,7 @@ function logout() {
 }
 
 // =========================================================
-// 5. ระบบจัดการโต๊ะ
+// 5. ระบบจัดการโต๊ะ และการแก้ไขบิลโต๊ะ
 // =========================================================
 function renderTables() {
     const normalContainer = document.getElementById("normal-tables-container");
@@ -315,7 +324,6 @@ function openOrderModal(tableId, tableName) {
     document.getElementById("order-modal-title").innerText = `สั่งของเข้า ${tableName}`;
     document.getElementById("order-modal").classList.remove("hidden");
     
-    // โชว์เฉพาะสินค้าที่ยังมีในสต๊อกให้พนักงานกดสั่ง
     document.getElementById("order-product-list").innerHTML = PRODUCTS.map(p => {
         if (p.inStock === false) return ''; 
         return `<button onclick="addItemToTable('${p.id}')" class="border p-2 rounded-xl text-left bg-white shadow-sm hover:border-blue-500"><div class="font-bold text-sm">${p.name}</div><div class="text-xs text-gray-500">฿${p.price}</div></button>`;
@@ -331,11 +339,38 @@ function addItemToTable(productId) {
     saveDataLocally(); renderCurrentOrders();
 }
 
+// [ใหม่] ฟังก์ชันลบสินค้าออกจากบิลของโต๊ะโดยตรง
+function reduceItemFromTable(productId) {
+    const tableOrders = activeTables[currentlyOrderingTableId].orders;
+    if (tableOrders[productId]) {
+        tableOrders[productId].qty -= 1;
+        if (tableOrders[productId].qty <= 0) delete tableOrders[productId];
+        saveDataLocally(); 
+        renderCurrentOrders();
+    }
+}
+
+// [อัปเดต] หน้าต่างสั่งของ มีปุ่ม + / - เพื่อแก้ไขบิลโต๊ะ
 function renderCurrentOrders() {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
     const items = Object.values(tableOrders);
-    if (items.length === 0) { document.getElementById("current-orders-list").innerHTML = "<li class='text-gray-400'>ยังไม่มีรายการ</li>"; return; }
-    document.getElementById("current-orders-list").innerHTML = items.map(item => `<li class="flex justify-between items-center bg-white p-2 border rounded"><span>${item.detail.name} <span class="text-xs text-gray-400">(@${item.detail.price})</span></span><span class="font-bold text-blue-600">x${item.qty}</span></li>`).join("");
+    
+    if (items.length === 0) { 
+        document.getElementById("current-orders-list").innerHTML = "<li class='text-gray-400 text-center py-2'>ยังไม่มีรายการ</li>"; 
+        return; 
+    }
+    
+    document.getElementById("current-orders-list").innerHTML = items.map(item => `
+        <li class="flex justify-between items-center bg-white p-2 border rounded-lg shadow-sm">
+            <span>${item.detail.name} <span class="text-xs text-gray-400">(@${item.detail.price})</span></span>
+            
+            <div class="flex items-center gap-2 bg-gray-50 p-1 rounded-md border">
+                <button onclick="reduceItemFromTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-red-500 shadow-sm font-bold">-</button>
+                <span class="font-bold text-blue-600 w-4 text-center">${item.qty}</span>
+                <button onclick="addItemToTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-blue-600 shadow-sm font-bold">+</button>
+            </div>
+        </li>
+    `).join("");
 }
 
 // =========================================================
@@ -490,7 +525,6 @@ function closeReceiptModal() { document.getElementById("receipt-modal").classLis
 // =========================================================
 // 9. ระบบบัญชี 
 // =========================================================
-// (ใช้โค้ดรายงานชุดเดิม ไม่ต้องเปลี่ยนแปลง)
 function openReportModal() { document.getElementById("report-modal").classList.remove("hidden"); const datePicker = document.getElementById("report-date-picker"); if (!datePicker.value) { const today = new Date(); datePicker.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`; } loadReportData(); }
 function toggleReportSection(sectionId) { const sections = ['detail-income', 'detail-expense', 'detail-table', 'detail-product']; sections.forEach(id => { if (id !== sectionId) { const el = document.getElementById(id); if (el) el.classList.add('hidden'); } }); const target = document.getElementById(sectionId); if (target) { target.classList.toggle('hidden'); if(!target.classList.contains('hidden')) target.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } }
 function loadReportData() {
