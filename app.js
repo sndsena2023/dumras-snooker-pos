@@ -41,12 +41,17 @@ const activeTables = {};
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 let incomingOrdersData = []; 
 
+// [ใหม่] บังคับโหลดเสียงรอไว้ก่อน เพื่อให้พร้อมใช้เสมอ
+if ('speechSynthesis' in window) {
+    window.speechSynthesis.getVoices();
+}
+
 function syncProductsToCloud() {
     db.collection("system").doc("products").set({ list: PRODUCTS }).catch(e => console.error("Sync Error", e));
 }
 
 // =========================================================
-// [อัปเดต] ระบบจัดการออเดอร์ พร้อมปุ่มลบรายการที่ของหมด
+// 2. ระบบจัดการออเดอร์ พร้อมเสียงพูดที่ชัดขึ้น
 // =========================================================
 db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((snapshot) => {
     incomingOrdersData = [];
@@ -67,11 +72,28 @@ db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((sn
         btn.classList.remove("hidden");
         badge.innerText = incomingOrdersData.length;
         
+        // [อัปเดต] ระบบเสียงพูดภาษาไทยเวอร์ชันชัดเจน
         if(isNewAdded && currentStaff && 'speechSynthesis' in window) {
             const lastOrder = incomingOrdersData[incomingOrdersData.length-1];
-            const speech = new SpeechSynthesisUtterance(`มีออเดอร์เข้าครับ โต๊ะ ${lastOrder.tableName}`);
+            
+            // ใส่ลูกน้ำ (,) หรือจุด (...) เพื่อบังคับให้ระบบเว้นวรรคหายใจ
+            const textToSpeak = `มีออเดอร์ใหม่เข้าครับ, จาก ${lastOrder.tableName}`;
+            const speech = new SpeechSynthesisUtterance(textToSpeak);
+            
             speech.lang = 'th-TH';
-            speech.rate = 0.9;
+            speech.rate = 0.85; // ช้าลงนิดนึง ให้อ่านชัดทุกคำ
+            speech.pitch = 1.0;
+            
+            // ค้นหาเสียงคุณภาพสูงที่ฝังอยู่ในเครื่อง (Google หรือ Apple)
+            let voices = window.speechSynthesis.getVoices();
+            let thaiVoices = voices.filter(v => v.lang.includes('th'));
+            
+            if (thaiVoices.length > 0) {
+                // พยายามเลือกเสียงที่ชื่อมีคำว่า Google, Siri หรือเสียงที่มีคุณภาพดีกว่า default
+                let premiumVoice = thaiVoices.find(v => v.name.includes('Google') || v.name.includes('Siri') || v.name.includes('Kanya') || v.name.includes('Narisa'));
+                speech.voice = premiumVoice || thaiVoices[0];
+            }
+
             window.speechSynthesis.speak(speech);
         }
     } else {
@@ -101,8 +123,6 @@ function renderPendingOrders() {
             itemsHtml += `
                 <div class="flex justify-between items-center text-sm border-b border-yellow-100/50 py-1.5 last:border-0">
                     <span class="text-gray-700">- ${it.detail.name} <span class="font-bold text-blue-600 ml-1">x${it.qty}</span></span>
-                    
-                    <!-- [ใหม่] ปุ่มกดตัดสินค้าบางตัวออกกรณีของหมด -->
                     <button onclick="removePendingItem('${order.id}', ${index})" class="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 transition font-bold">ตัดออก (หมด)</button>
                 </div>`;
         });
@@ -124,40 +144,25 @@ function renderPendingOrders() {
     container.innerHTML = html;
 }
 
-// [ใหม่] ฟังก์ชันลบสินค้าแยกชิ้นจากคิวออเดอร์
 window.removePendingItem = function(orderId, itemIndex) {
     const order = incomingOrdersData.find(o => o.id === orderId);
     if(order) {
         order.items.splice(itemIndex, 1);
-        
-        // ถ้าตัดออกหมดทุกชิ้น ก็ถือว่ายกเลิกออเดอร์ทั้งหมด
-        if(order.items.length === 0) {
-            rejectOrder(orderId);
-        } else {
-            // อัปเดตข้อมูลขึ้น Firebase ให้ลูกค้าเห็นว่าโดนตัดของ
-            db.collection("incoming_orders").doc(orderId).update({ items: order.items });
-        }
+        if(order.items.length === 0) { rejectOrder(orderId); } 
+        else { db.collection("incoming_orders").doc(orderId).update({ items: order.items }); }
     }
 };
 
 function acceptOrder(orderId) {
     const order = incomingOrdersData.find(o => o.id === orderId);
     if(!order) return;
-    
     const tId = order.tableId;
     if (!activeTables[tId]) { activeTables[tId] = { startTime: new Date(), orders: {} }; }
-    
     order.items.forEach(item => {
-        if (activeTables[tId].orders[item.detail.id]) {
-            activeTables[tId].orders[item.detail.id].qty += item.qty;
-        } else {
-            activeTables[tId].orders[item.detail.id] = { detail: item.detail, qty: item.qty };
-        }
+        if (activeTables[tId].orders[item.detail.id]) { activeTables[tId].orders[item.detail.id].qty += item.qty; } 
+        else { activeTables[tId].orders[item.detail.id] = { detail: item.detail, qty: item.qty }; }
     });
-    
-    saveDataLocally();
-    renderTables();
-    db.collection("incoming_orders").doc(orderId).update({ status: "accepted" }); 
+    saveDataLocally(); renderTables(); db.collection("incoming_orders").doc(orderId).update({ status: "accepted" }); 
 }
 
 function rejectOrder(orderId) {
@@ -186,7 +191,6 @@ function saveDataLocally() {
 function loadDataLocally() {
     const savedProducts = localStorage.getItem("dumras_products");
     if (savedProducts) PRODUCTS = JSON.parse(savedProducts);
-
     PRODUCTS.forEach(p => { if(p.inStock === undefined) p.inStock = true; });
 
     const savedTables = localStorage.getItem("dumras_tables");
@@ -339,18 +343,15 @@ function addItemToTable(productId) {
     saveDataLocally(); renderCurrentOrders();
 }
 
-// [ใหม่] ฟังก์ชันลบสินค้าออกจากบิลของโต๊ะโดยตรง
 function reduceItemFromTable(productId) {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
     if (tableOrders[productId]) {
         tableOrders[productId].qty -= 1;
         if (tableOrders[productId].qty <= 0) delete tableOrders[productId];
-        saveDataLocally(); 
-        renderCurrentOrders();
+        saveDataLocally(); renderCurrentOrders();
     }
 }
 
-// [อัปเดต] หน้าต่างสั่งของ มีปุ่ม + / - เพื่อแก้ไขบิลโต๊ะ
 function renderCurrentOrders() {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
     const items = Object.values(tableOrders);
@@ -363,7 +364,6 @@ function renderCurrentOrders() {
     document.getElementById("current-orders-list").innerHTML = items.map(item => `
         <li class="flex justify-between items-center bg-white p-2 border rounded-lg shadow-sm">
             <span>${item.detail.name} <span class="text-xs text-gray-400">(@${item.detail.price})</span></span>
-            
             <div class="flex items-center gap-2 bg-gray-50 p-1 rounded-md border">
                 <button onclick="reduceItemFromTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-red-500 shadow-sm font-bold">-</button>
                 <span class="font-bold text-blue-600 w-4 text-center">${item.qty}</span>
@@ -386,7 +386,7 @@ function saveExpense() {
 }
 
 // =========================================================
-// 7. จัดการร้านค้า (เพิ่มปุ่มสลับสถานะ "หมด/มีของ")
+// 7. จัดการร้านค้า
 // =========================================================
 function switchAdminTab(tab) {
     const prodSec = document.getElementById("admin-section-products"), staffSec = document.getElementById("admin-section-staff");
