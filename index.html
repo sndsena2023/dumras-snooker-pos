@@ -33,11 +33,7 @@
         .dot { width: 16px; height: 16px; border-radius: 50%; background-color: #e5e7eb; transition: all 0.2s; }
         .dot.active { background-color: #3b82f6; transform: scale(1.2); }
         .receipt-zigzag { position: relative; background: #fff; }
-        .receipt-zigzag::after {
-            content: ""; position: absolute; bottom: -10px; left: 0; right: 0; height: 10px;
-            background-size: 20px 20px;
-            background-image: radial-gradient(circle at 10px 10px, transparent 12px, #fff 13px);
-        }
+        .receipt-zigzag::after { content: ""; position: absolute; bottom: -10px; left: 0; right: 0; height: 10px; background-size: 20px 20px; background-image: radial-gradient(circle at 10px 10px, transparent 12px, #fff 13px); }
     </style>
 </head>
 <body class="text-gray-800 h-screen w-screen overflow-hidden">
@@ -75,225 +71,73 @@
             <div class="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
                 <div class="flex items-center gap-3 w-full sm:w-auto">
                     <img src="icon-512.png" alt="โลโก้ร้าน" class="w-10 h-10 object-contain rounded-lg">
-                    <h1 class="text-xl font-bold text-gray-800">ดำรัส สนุ๊กเกอร์ POS</h1>
+                    <h1 class="text-xl font-bold text-gray-800">ดำรัส สนุ๊กเกอร์</h1>
                 </div>
                 <div class="flex items-center gap-2 sm:gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
                     
-                    <!-- ปุ่มบันทึกรายจ่าย (พนักงานและเจ้าของร้านเห็น) -->
+                    <!-- ปุ่มคิวออเดอร์ -->
+                    <button id="btn-pending-orders" onclick="openPendingModal()" class="hidden bg-yellow-400 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md hover:bg-yellow-500 animate-pulse relative shrink-0">
+                        🔔 ออเดอร์เข้า <span id="pending-badge" class="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border border-white">0</span>
+                    </button>
+
                     <button onclick="openExpenseModal()" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-red-200 shrink-0">💸 บันทึกรายจ่าย</button>
-                    
                     <button id="btn-admin-report" onclick="openReportModal()" class="hidden bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 shrink-0">📊 รายงานบัญชี</button>
                     <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200 shrink-0">⚙️ ตั้งค่าร้าน</button>
                     
-                    <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium shrink-0">
-                        <span id="current-staff-name">...</span>
-                    </div>
+                    <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium shrink-0"><span id="current-staff-name">...</span></div>
                     <button onclick="logout()" class="text-gray-500 hover:text-red-700 text-sm font-medium shrink-0">ออกระบบ</button>
                 </div>
             </div>
         </div>
 
         <div class="max-w-6xl mx-auto px-6 mt-6">
-            <div class="flex items-center gap-2 mb-4">
-                <div class="w-2 h-6 bg-blue-500 rounded-full"></div><h2 class="text-lg font-bold text-gray-700">โต๊ะธรรมดา (90 ฿/ชม.)</h2>
-            </div>
+            <div class="flex items-center gap-2 mb-4"><div class="w-2 h-6 bg-blue-500 rounded-full"></div><h2 class="text-lg font-bold text-gray-700">โต๊ะธรรมดา (90 ฿/ชม.)</h2></div>
             <div id="normal-tables-container" class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8"></div>
-            <div class="flex items-center gap-2 mb-4">
-                <div class="w-2 h-6 bg-yellow-500 rounded-full"></div><h2 class="text-lg font-bold text-gray-700">ห้อง VIP (120 ฿/ชม.)</h2>
-            </div>
+            <div class="flex items-center gap-2 mb-4"><div class="w-2 h-6 bg-yellow-500 rounded-full"></div><h2 class="text-lg font-bold text-gray-700">ห้อง VIP (120 ฿/ชม.)</h2></div>
             <div id="vip-tables-container" class="grid grid-cols-2 md:grid-cols-3 gap-5"></div>
         </div>
     </div>
 
-    <!-- ================= POPUP: บันทึกรายจ่าย ================= -->
+    <!-- ================= POPUP: คิวออเดอร์ลูกค้ารอรับ ================= -->
+    <div id="pending-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center mb-4 shrink-0 border-b pb-3">
+                <h2 class="text-xl font-bold text-yellow-600">🔔 ออเดอร์จากมือถือลูกค้า</h2>
+                <button onclick="closePendingModal()" class="text-gray-400 hover:text-red-500 text-xl font-bold">✕</button>
+            </div>
+            <div id="pending-orders-list" class="flex-1 overflow-y-auto space-y-4">
+                <p class="text-center text-gray-400 py-10">ไม่มีออเดอร์ค้าง</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================= POPUP อื่นๆ (รายจ่าย, สั่งของ, ตั้งค่า, บัญชี, จ่ายเงิน) ================= -->
+    <!-- (คงโค้ด Popup เดิมไว้ทั้งหมด ยกเว้นส่วนที่แก้ไขเรื่องสต๊อกใน app.js) -->
+    
     <div id="expense-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-red-600">💸 บันทึกรายจ่ายร้าน</h2>
-                <button onclick="closeExpenseModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
-            </div>
-            <div class="space-y-4 mb-6">
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">รายละเอียดค่าใช้จ่าย</label>
-                    <input type="text" id="expense-desc" placeholder="เช่น ค่าเครื่องดื่ม, ค่าน้ำแข็ง, ค่าไฟ" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">จำนวนเงิน (บาท)</label>
-                    <input type="number" id="expense-amount" placeholder="0" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500 text-lg font-bold text-red-600">
-                </div>
-            </div>
-            <button onclick="saveExpense()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-md transition">บันทึกรายจ่าย</button>
-        </div>
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold text-red-600">💸 บันทึกรายจ่ายร้าน</h2><button onclick="closeExpenseModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button></div><div class="space-y-4 mb-6"><div><label class="block text-sm font-medium text-gray-700 mb-1">รายละเอียดค่าใช้จ่าย</label><input type="text" id="expense-desc" placeholder="เช่น ค่าเครื่องดื่ม, ค่าน้ำแข็ง" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-sm"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">จำนวนเงิน (บาท)</label><input type="number" id="expense-amount" placeholder="0" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-lg font-bold text-red-600"></div></div><button onclick="saveExpense()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-md">บันทึกรายจ่าย</button></div>
     </div>
 
-    <!-- ================= POPUP: รายงานบัญชี & ย้อนหลัง ================= -->
     <div id="report-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex items-center justify-center p-2 sm:p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] flex flex-col">
-            <div class="flex flex-col sm:flex-row justify-between items-center mb-4 shrink-0 gap-3">
-                <h2 class="text-xl font-bold text-gray-800">📊 บัญชีรายรับ-รายจ่าย</h2>
-                <div class="flex items-center gap-2 w-full sm:w-auto">
-                    <label class="text-sm text-gray-600 whitespace-nowrap">ดูข้อมูลวันที่:</label>
-                    <input type="date" id="report-date-picker" onchange="loadReportData()" class="border px-3 py-1.5 rounded-lg text-sm w-full sm:w-auto focus:ring-2 focus:ring-blue-500">
-                    <button onclick="closeReportModal()" class="text-gray-400 hover:text-red-500 text-xl ml-2 shrink-0">✕</button>
-                </div>
-            </div>
-            <div id="report-content" class="flex-1 overflow-y-auto pr-1">
-                <p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูล...</p>
-            </div>
-        </div>
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-2xl p-4 sm:p-6 max-h-[95vh] flex flex-col"><div class="flex flex-col sm:flex-row justify-between items-center mb-4 shrink-0 gap-3"><h2 class="text-xl font-bold text-gray-800">📊 บัญชีรายรับ-รายจ่าย</h2><div class="flex items-center gap-2 w-full sm:w-auto"><label class="text-sm text-gray-600 whitespace-nowrap">ดูข้อมูลวันที่:</label><input type="date" id="report-date-picker" onchange="loadReportData()" class="border px-3 py-1.5 rounded-lg text-sm w-full sm:w-auto"><button onclick="closeReportModal()" class="text-gray-400 hover:text-red-500 text-xl ml-2 shrink-0">✕</button></div></div><div id="report-content" class="flex-1 overflow-y-auto pr-1"><p class="text-center text-gray-500 py-10">กำลังโหลดข้อมูล...</p></div></div>
     </div>
 
-    <!-- ================= POPUP: สั่งของ ================= -->
     <div id="order-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold" id="order-modal-title">สั่งของเข้าโต๊ะ</h2>
-                <button onclick="closeOrderModal()" class="text-gray-400 hover:text-red-500">✕ ปิด</button>
-            </div>
-            <div id="order-product-list" class="grid grid-cols-2 gap-3 mb-4"></div>
-            <hr class="my-4"><h3 class="font-bold text-lg mb-2">รายการที่สั่งไว้:</h3>
-            <ul id="current-orders-list" class="space-y-2 mb-4 text-sm text-gray-600 bg-gray-50 p-3 rounded"></ul>
-        </div>
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold" id="order-modal-title">สั่งของเข้าโต๊ะ</h2><button onclick="closeOrderModal()" class="text-gray-400 hover:text-red-500">✕ ปิด</button></div><div id="order-product-list" class="grid grid-cols-2 gap-3 mb-4"></div><hr class="my-4"><h3 class="font-bold text-lg mb-2">รายการที่สั่งไว้:</h3><ul id="current-orders-list" class="space-y-2 mb-4 text-sm text-gray-600 bg-gray-50 p-3 rounded"></ul></div>
     </div>
 
-    <!-- ================= POPUP: จัดการสินค้าและพนักงาน (Admin) ================= -->
     <div id="product-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-purple-700">⚙️ ตั้งค่าระบบและจัดการร้าน</h2>
-                <button onclick="closeProductManager()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
-            </div>
-            
-            <div class="flex border-b mb-4">
-                <button onclick="switchAdminTab('products')" id="tab-btn-products" class="flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600">📦 จัดการสินค้า</button>
-                <button onclick="switchAdminTab('staff')" id="tab-btn-staff" class="flex-1 pb-2 font-bold text-gray-400">👥 ฐานข้อมูลพนักงาน</button>
-            </div>
-
-            <!-- ส่วนที่ 1: จัดการสินค้า -->
-            <div id="admin-section-products">
-                <div class="bg-purple-50 p-4 rounded-xl mb-4 border border-purple-100">
-                    <h3 class="font-bold text-sm mb-2 text-purple-800">เพิ่มสินค้าใหม่</h3>
-                    <div class="grid grid-cols-2 gap-2 mb-2">
-                        <input type="text" id="new-p-name" placeholder="ชื่อสินค้า" class="px-3 py-2 rounded border text-sm">
-                        <input type="number" id="new-p-price" placeholder="ราคา (บาท)" class="px-3 py-2 rounded border text-sm">
-                        <select id="new-p-category" class="px-3 py-2 rounded border text-sm col-span-2">
-                            <option value="snack">หมวดหมู่: อาหาร/ขนม</option>
-                            <option value="water">หมวดหมู่: น้ำเปล่า</option>
-                            <option value="softdrink">หมวดหมู่: น้ำอัดลม</option>
-                            <option value="alcohol">หมวดหมู่: แอลกอฮอล์</option>
-                        </select>
-                    </div>
-                    <button onclick="addNewProduct()" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มสินค้า</button>
-                </div>
-                <h3 class="font-bold text-sm mb-2 text-gray-700">สินค้าที่มีในระบบ:</h3>
-                <div id="admin-product-list" class="space-y-2"></div>
-            </div>
-
-            <!-- ส่วนที่ 2: จัดการพนักงาน -->
-            <div id="admin-section-staff" class="hidden">
-                <div class="bg-blue-50 p-4 rounded-xl mb-4 border border-blue-100">
-                    <h3 class="font-bold text-sm mb-2 text-blue-800">เพิ่มพนักงานใหม่</h3>
-                    <div class="grid grid-cols-2 gap-2 mb-2">
-                        <input type="text" id="new-s-name" placeholder="ชื่อพนักงาน" class="px-3 py-2 rounded border text-sm">
-                        <input type="text" id="new-s-pin" maxlength="4" placeholder="รหัส PIN 4 หลัก" class="px-3 py-2 rounded border text-sm">
-                        <select id="new-s-role" class="px-3 py-2 rounded border text-sm col-span-2">
-                            <option value="staff">สิทธิ์: พนักงานหน้าร้าน (Staff)</option>
-                            <option value="admin">สิทธิ์: เจ้าของร้าน (Admin)</option>
-                        </select>
-                    </div>
-                    <button onclick="addNewStaff()" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มพนักงาน</button>
-                </div>
-                <h3 class="font-bold text-sm mb-2 text-gray-700">รายชื่อพนักงานทั้งหมดในระบบ:</h3>
-                <div id="admin-staff-list" class="space-y-2"></div>
-            </div>
-        </div>
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-xl p-6 max-h-[90vh] overflow-y-auto"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold text-purple-700">⚙️ ตั้งค่าระบบและจัดการร้าน</h2><button onclick="closeProductManager()" class="text-gray-400 hover:text-red-500 text-xl">✕</button></div><div class="flex border-b mb-4"><button onclick="switchAdminTab('products')" id="tab-btn-products" class="flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600">📦 จัดการสินค้า</button><button onclick="switchAdminTab('staff')" id="tab-btn-staff" class="flex-1 pb-2 font-bold text-gray-400">👥 ฐานข้อมูลพนักงาน</button></div><div id="admin-section-products"><div class="bg-purple-50 p-4 rounded-xl mb-4 border border-purple-100"><h3 class="font-bold text-sm mb-2 text-purple-800">เพิ่มสินค้าใหม่</h3><div class="grid grid-cols-2 gap-2 mb-2"><input type="text" id="new-p-name" placeholder="ชื่อสินค้า" class="px-3 py-2 rounded border text-sm"><input type="number" id="new-p-price" placeholder="ราคา (บาท)" class="px-3 py-2 rounded border text-sm"><select id="new-p-category" class="px-3 py-2 rounded border text-sm col-span-2"><option value="snack">หมวดหมู่: อาหาร/ขนม</option><option value="water">หมวดหมู่: น้ำเปล่า</option><option value="softdrink">หมวดหมู่: น้ำอัดลม</option><option value="alcohol">หมวดหมู่: แอลกอฮอล์</option></select></div><button onclick="addNewProduct()" class="w-full bg-purple-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มสินค้า</button></div><h3 class="font-bold text-sm mb-2 text-gray-700">สินค้าที่มีในระบบ (กดปุ่มเพื่อระบุว่าของหมด):</h3><div id="admin-product-list" class="space-y-2"></div></div><div id="admin-section-staff" class="hidden"><div class="bg-blue-50 p-4 rounded-xl mb-4 border border-blue-100"><h3 class="font-bold text-sm mb-2 text-blue-800">เพิ่มพนักงานใหม่</h3><div class="grid grid-cols-2 gap-2 mb-2"><input type="text" id="new-s-name" placeholder="ชื่อพนักงาน" class="px-3 py-2 rounded border text-sm"><input type="text" id="new-s-pin" maxlength="4" placeholder="รหัส PIN 4 หลัก" class="px-3 py-2 rounded border text-sm"><select id="new-s-role" class="px-3 py-2 rounded border text-sm col-span-2"><option value="staff">สิทธิ์: พนักงานหน้าร้าน</option><option value="admin">สิทธิ์: เจ้าของร้าน</option></select></div><button onclick="addNewStaff()" class="w-full bg-blue-600 text-white py-2 rounded-lg text-sm font-medium">+ เพิ่มพนักงาน</button></div><h3 class="font-bold text-sm mb-2 text-gray-700">รายชื่อพนักงานทั้งหมด:</h3><div id="admin-staff-list" class="space-y-2"></div></div></div>
     </div>
 
-    <!-- ================= POPUP: สรุปยอดก่อนจ่าย ================= -->
     <div id="checkout-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold text-gray-800">💸 สรุปยอดชำระเงิน</h2>
-                <button onclick="closeCheckoutModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button>
-            </div>
-            
-            <div class="bg-gray-50 p-4 rounded-xl mb-6 border">
-                <div class="flex justify-between mb-2"><span class="text-gray-600">โต๊ะ:</span> <span id="co-table" class="font-bold"></span></div>
-                <div class="flex justify-between mb-2"><span class="text-gray-600">เวลาเล่น:</span> <span id="co-time" class="font-bold"></span></div>
-                <hr class="my-2 border-gray-200">
-                <div class="flex justify-between mb-1"><span class="text-gray-600">ค่าโต๊ะ:</span> <span>฿<span id="co-fee-table"></span></span></div>
-                <div class="flex justify-between mb-1"><span class="text-gray-600">ค่าอาหาร/เครื่องดื่ม:</span> <span>฿<span id="co-fee-items"></span></span></div>
-                <hr class="my-3 border-gray-300 border-dashed">
-                <div class="flex justify-between items-end">
-                    <span class="text-lg font-bold text-gray-800">ยอดรวมทั้งสิ้น</span>
-                    <span class="text-3xl font-bold text-blue-600">฿<span id="co-total"></span></span>
-                </div>
-            </div>
-
-            <h3 class="font-bold text-gray-700 mb-3 text-center">เลือกวิธีการชำระเงิน</h3>
-            <div class="grid grid-cols-2 gap-4">
-                <button onclick="processPayment('เงินสด')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl shadow-md flex flex-col items-center justify-center gap-1">
-                    <span class="text-2xl">💵</span> เงินสด
-                </button>
-                <button onclick="processPayment('เงินโอน')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 rounded-xl shadow-md flex flex-col items-center justify-center gap-1">
-                    <span class="text-2xl">📱</span> เงินโอน (QR)
-                </button>
-            </div>
-        </div>
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"><div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-bold text-gray-800">💸 สรุปยอดชำระเงิน</h2><button onclick="closeCheckoutModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button></div><div class="bg-gray-50 p-4 rounded-xl mb-6 border"><div class="flex justify-between mb-2"><span class="text-gray-600">โต๊ะ:</span> <span id="co-table" class="font-bold"></span></div><div class="flex justify-between mb-2"><span class="text-gray-600">เวลาเล่น:</span> <span id="co-time" class="font-bold"></span></div><hr class="my-2 border-gray-200"><div class="flex justify-between mb-1"><span class="text-gray-600">ค่าโต๊ะ:</span> <span>฿<span id="co-fee-table"></span></span></div><div class="flex justify-between mb-1"><span class="text-gray-600">ค่าอาหาร:</span> <span>฿<span id="co-fee-items"></span></span></div><hr class="my-3 border-gray-300 border-dashed"><div class="flex justify-between items-end"><span class="text-lg font-bold text-gray-800">ยอดรวมทั้งสิ้น</span><span class="text-3xl font-bold text-blue-600">฿<span id="co-total"></span></span></div></div><h3 class="font-bold text-gray-700 mb-3 text-center">เลือกวิธีการชำระเงิน</h3><div class="grid grid-cols-2 gap-4"><button onclick="processPayment('เงินสด')" class="bg-green-500 hover:bg-green-600 text-white font-bold py-4 rounded-xl shadow-md flex flex-col items-center justify-center gap-1"><span class="text-2xl">💵</span> เงินสด</button><button onclick="processPayment('เงินโอน')" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 rounded-xl shadow-md flex flex-col items-center justify-center gap-1"><span class="text-2xl">📱</span> เงินโอน (QR)</button></div></div>
     </div>
 
-    <!-- ================= POPUP: ใบเสร็จรับเงิน & QR Code ================= -->
     <div id="receipt-modal" class="hidden fixed inset-0 z-[70] bg-black bg-opacity-80 flex flex-col items-center justify-center py-6 overflow-y-auto">
-        <div id="receipt-paper" class="receipt-zigzag w-80 p-6 text-gray-800 text-sm shadow-2xl rounded-t-lg mb-4 shrink-0">
-            <div class="text-center mb-4">
-                <img src="icon-512.png" alt="โลโก้ร้าน" class="w-16 h-16 mx-auto mb-2 object-contain grayscale">
-                <h2 class="font-bold text-xl tracking-wide">ดำรัส สนุ๊กเกอร์</h2>
-                <p class="text-xs text-gray-500 mt-1">ใบเสร็จรับเงิน (Receipt)</p>
-            </div>
-            
-            <div class="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs space-y-1">
-                <div class="flex justify-between"><span>โต๊ะ:</span> <span id="rcpt-table" class="font-bold"></span></div>
-                <div class="flex justify-between"><span>วันที่:</span> <span id="rcpt-date"></span></div>
-                <div class="flex justify-between"><span>พนักงาน:</span> <span id="rcpt-staff"></span></div>
-                <div class="flex justify-between"><span>ชำระโดย:</span> <span id="rcpt-method" class="font-bold"></span></div>
-            </div>
-
-            <div class="min-h-[100px]">
-                <table class="w-full text-xs text-left mb-3">
-                    <thead>
-                        <tr class="border-b border-gray-200">
-                            <th class="pb-1 font-medium">รายการ</th>
-                            <th class="pb-1 text-center font-medium">จำนวน</th>
-                            <th class="pb-1 text-right font-medium">ราคา</th>
-                        </tr>
-                    </thead>
-                    <tbody id="rcpt-items"></tbody>
-                </table>
-            </div>
-
-            <div class="border-t border-dashed border-gray-400 pt-3">
-                <div class="flex justify-between items-center bg-gray-50 p-2 rounded">
-                    <span class="font-bold text-sm">ยอดสุทธิ (Total)</span>
-                    <span class="font-bold text-lg text-gray-900">฿<span id="rcpt-total"></span></span>
-                </div>
-            </div>
-            <p class="text-center font-medium text-xs text-gray-500 mt-6">ขอบคุณที่ใช้บริการค่ะ 🙏<br>โอกาสหน้าเชิญใหม่นะคะ</p>
-        </div>
-
-        <div id="qr-payment-section" class="hidden flex-col items-center bg-white p-4 rounded-xl shadow-lg mb-6 shrink-0 w-80 text-center">
-            <h3 class="font-bold text-blue-700 mb-2">📱 สแกนจ่ายผ่านพร้อมเพย์</h3>
-            <img id="qr-image" src="" alt="QR Code" class="w-40 h-40 object-cover border-2 border-blue-100 rounded-lg mx-auto">
-            <p class="text-sm text-gray-600 mt-2">ยอดชำระ: <span class="font-bold text-lg text-blue-600">฿<span id="qr-total-display"></span></span></p>
-        </div>
-
-        <div class="flex gap-4 shrink-0 pb-10">
-            <button onclick="saveReceiptImage()" class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-full shadow-lg flex items-center gap-2">
-                📸 บันทึกรูปลงเครื่อง
-            </button>
-            <button onclick="closeReceiptModal()" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-6 rounded-full shadow-lg">
-                ปิดหน้าต่าง
-            </button>
-        </div>
+        <div id="receipt-paper" class="receipt-zigzag w-80 p-6 text-gray-800 text-sm shadow-2xl rounded-t-lg mb-4 shrink-0"><div class="text-center mb-4"><img src="icon-512.png" alt="โลโก้" class="w-16 h-16 mx-auto mb-2 object-contain grayscale"><h2 class="font-bold text-xl tracking-wide">ดำรัส สนุ๊กเกอร์</h2><p class="text-xs text-gray-500 mt-1">ใบเสร็จรับเงิน</p></div><div class="border-b border-dashed border-gray-400 pb-3 mb-3 text-xs space-y-1"><div class="flex justify-between"><span>โต๊ะ:</span> <span id="rcpt-table" class="font-bold"></span></div><div class="flex justify-between"><span>วันที่:</span> <span id="rcpt-date"></span></div><div class="flex justify-between"><span>พนักงาน:</span> <span id="rcpt-staff"></span></div><div class="flex justify-between"><span>ชำระโดย:</span> <span id="rcpt-method" class="font-bold"></span></div></div><div class="min-h-[100px]"><table class="w-full text-xs text-left mb-3"><thead><tr class="border-b border-gray-200"><th class="pb-1 font-medium">รายการ</th><th class="pb-1 text-center font-medium">จำนวน</th><th class="pb-1 text-right font-medium">ราคา</th></tr></thead><tbody id="rcpt-items"></tbody></table></div><div class="border-t border-dashed border-gray-400 pt-3"><div class="flex justify-between items-center bg-gray-50 p-2 rounded"><span class="font-bold text-sm">ยอดสุทธิ (Total)</span><span class="font-bold text-lg text-gray-900">฿<span id="rcpt-total"></span></span></div></div><p class="text-center font-medium text-xs text-gray-500 mt-6">ขอบคุณที่ใช้บริการค่ะ 🙏</p></div>
+        <div id="qr-payment-section" class="hidden flex-col items-center bg-white p-4 rounded-xl shadow-lg mb-6 shrink-0 w-80 text-center"><h3 class="font-bold text-blue-700 mb-2">📱 สแกนจ่ายผ่านพร้อมเพย์</h3><img id="qr-image" src="" alt="QR" class="w-40 h-40 object-cover border-2 border-blue-100 rounded-lg mx-auto"><p class="text-sm text-gray-600 mt-2">ยอดชำระ: <span class="font-bold text-lg text-blue-600">฿<span id="qr-total-display"></span></span></p></div>
+        <div class="flex gap-4 shrink-0 pb-10"><button onclick="saveReceiptImage()" class="bg-blue-500 text-white font-bold py-3 px-6 rounded-full shadow-lg flex items-center gap-2">📸 บันทึกรูปลงเครื่อง</button><button onclick="closeReceiptModal()" class="bg-gray-600 text-white font-bold py-3 px-6 rounded-full shadow-lg">ปิดหน้าต่าง</button></div>
     </div>
 
     <script src="app.js"></script>
