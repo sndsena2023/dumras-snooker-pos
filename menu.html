@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>สั่งอาหาร - ดำรัส สนุ๊กเกอร์</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600&display=swap" rel="stylesheet">
+    
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore-compat.js"></script>
+    
+    <style>
+        body { font-family: 'Kanit', sans-serif; background-color: #f3f4f6; padding-bottom: 80px; }
+        /* ซ่อน scrollbar เพื่อความสวยงามบนมือถือ */
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+    </style>
+</head>
+<body class="text-gray-800">
+
+    <!-- แถบด้านบน -->
+    <div class="bg-white shadow-sm sticky top-0 z-10 px-4 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+            <img src="icon-512.png" alt="โลโก้" class="w-8 h-8 object-contain rounded">
+            <div>
+                <h1 class="font-bold text-gray-800 leading-tight">ดำรัส สนุ๊กเกอร์</h1>
+                <p class="text-xs text-blue-500 font-medium" id="table-display">กำลังโหลดโต๊ะ...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- รายการสินค้า -->
+    <div class="p-4" id="product-list">
+        <p class="text-center text-gray-400 mt-10">กำลังโหลดเมนูอาหาร...</p>
+    </div>
+
+    <!-- แถบตะกร้าลอยด้านล่าง -->
+    <div id="cart-bar" class="fixed bottom-0 left-0 right-0 bg-blue-600 text-white p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] flex justify-between items-center transition-transform transform translate-y-full">
+        <div>
+            <p class="text-sm text-blue-100">รวม <span id="cart-qty-total" class="font-bold text-white">0</span> รายการ</p>
+            <p class="font-bold text-lg">฿<span id="cart-price-total">0</span></p>
+        </div>
+        <button onclick="openConfirmModal()" class="bg-white text-blue-600 font-bold py-2 px-6 rounded-xl shadow">ยืนยันการสั่ง</button>
+    </div>
+
+    <!-- Popup ยืนยันการสั่ง -->
+    <div id="confirm-modal" class="hidden fixed inset-0 z-50 bg-black bg-opacity-60 flex flex-col justify-end">
+        <div class="bg-white rounded-t-3xl p-6 w-full max-h-[80vh] flex flex-col animate-[slideUp_0.3s_ease-out]">
+            <div class="flex justify-between items-center mb-4 shrink-0">
+                <h2 class="text-lg font-bold text-gray-800">🍽️ ตะกร้าของฉัน</h2>
+                <button onclick="closeConfirmModal()" class="text-gray-400 text-xl font-bold">✕</button>
+            </div>
+            
+            <div id="cart-items-review" class="flex-1 overflow-y-auto space-y-3 mb-4"></div>
+            
+            <div class="border-t pt-4 shrink-0">
+                <button onclick="submitOrder()" class="w-full bg-green-500 hover:bg-green-600 text-white font-bold py-3.5 rounded-xl shadow-lg flex justify-center items-center gap-2">
+                    ✅ ส่งออเดอร์ให้พนักงาน
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Popup ออเดอร์สำเร็จ -->
+    <div id="success-modal" class="hidden fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 text-center">
+        <div class="text-6xl mb-4 animate-bounce">🎉</div>
+        <h2 class="text-2xl font-bold text-green-600 mb-2">ส่งออเดอร์เรียบร้อย!</h2>
+        <p class="text-gray-500 mb-8">พนักงานกำลังเตรียมอาหารให้คุณครับ กรุณารอสักครู่</p>
+        <button onclick="location.reload()" class="bg-gray-100 text-gray-700 font-bold py-3 px-8 rounded-full">สั่งเพิ่มอีก</button>
+    </div>
+
+    <script>
+        // --- 1. ตั้งค่า Firebase (ใช้ข้อมูลชุดเดิม) ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyD3_M85acXiPsrDNzvzHOPPW9cjRsL2NRk",
+            authDomain: "dumras-snooker-pos.firebaseapp.com",
+            projectId: "dumras-snooker-pos",
+            storageBucket: "dumras-snooker-pos.firebasestorage.app",
+            messagingSenderId: "985526889212",
+            appId: "1:985526889212:web:f4c71ad06b838cf9748579"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // --- 2. อ่านค่า โต๊ะ จาก URL (เช่น ?table=N1) ---
+        const urlParams = new URLSearchParams(window.location.search);
+        const tableId = urlParams.get('table');
+        
+        // แปลงรหัสโต๊ะเป็นชื่อให้ลูกค้าดูง่ายๆ
+        const tableNames = { "N1":"โต๊ะ 1", "N2":"โต๊ะ 2", "N3":"โต๊ะ 3", "N4":"โต๊ะ 4", "V1":"VIP 1", "V2":"VIP 2", "V3":"VIP 3" };
+        const tableName = tableNames[tableId] || tableId;
+
+        if (!tableId) {
+            document.body.innerHTML = '<div class="flex h-screen items-center justify-center text-red-500 font-bold">❌ ไม่พบข้อมูลโต๊ะ กรุณาสแกน QR Code ใหม่อีกครั้ง</div>';
+        } else {
+            document.getElementById("table-display").innerText = `📍 นั่งอยู่ที่: ${tableName}`;
+        }
+
+        // --- 3. ดึงเมนูอาหารจาก Cloud ---
+        let products = [];
+        let cart = {}; // เก็บออเดอร์ในรูปแบบ { p1: 2, p2: 1 }
+
+        db.collection("system").doc("products").get().then(doc => {
+            if (doc.exists) {
+                products = doc.data().list;
+                renderProducts();
+            } else {
+                document.getElementById("product-list").innerHTML = '<p class="text-center text-red-400">ยังไม่มีเมนูอาหารในระบบ</p>';
+            }
+        });
+
+        // จัดหมวดหมู่เมนู
+        const categoryNames = { "snack": "🍟 อาหารและขนม", "water": "💧 น้ำดื่ม", "softdrink": "🥤 น้ำอัดลม", "alcohol": "🍺 เครื่องดื่มแอลกอฮอล์" };
+
+        function renderProducts() {
+            let html = '';
+            const categories = [...new Set(products.map(p => p.category))];
+            
+            categories.forEach(cat => {
+                html += `<h2 class="text-lg font-bold text-gray-700 mb-3 mt-4 border-l-4 border-blue-500 pl-2">${categoryNames[cat] || cat}</h2>`;
+                html += `<div class="grid grid-cols-2 gap-3 mb-4">`;
+                
+                products.filter(p => p.category === cat).forEach(p => {
+                    const qty = cart[p.id] || 0;
+                    html += `
+                        <div class="bg-white border border-gray-100 rounded-xl p-3 shadow-sm flex flex-col justify-between">
+                            <div class="mb-2">
+                                <h3 class="font-bold text-sm text-gray-800">${p.name}</h3>
+                                <p class="text-blue-600 font-medium text-sm">฿${p.price}</p>
+                            </div>
+                            
+                            ${qty === 0 ? 
+                                `<button onclick="updateCart('${p.id}', 1)" class="w-full border border-blue-200 text-blue-600 hover:bg-blue-50 py-1.5 rounded-lg text-sm font-medium transition">เลือก</button>` 
+                                : 
+                                `<div class="flex justify-between items-center bg-gray-50 rounded-lg p-1 border">
+                                    <button onclick="updateCart('${p.id}', -1)" class="w-8 h-8 flex items-center justify-center bg-white rounded text-red-500 shadow-sm font-bold">-</button>
+                                    <span class="font-bold text-gray-800">${qty}</span>
+                                    <button onclick="updateCart('${p.id}', 1)" class="w-8 h-8 flex items-center justify-center bg-white rounded text-blue-600 shadow-sm font-bold">+</button>
+                                </div>`
+                            }
+                        </div>
+                    `;
+                });
+                html += `</div>`;
+            });
+            document.getElementById("product-list").innerHTML = html;
+        }
+
+        // --- 4. ระบบตะกร้า ---
+        function updateCart(pId, change) {
+            if (!cart[pId]) cart[pId] = 0;
+            cart[pId] += change;
+            if (cart[pId] <= 0) delete cart[pId];
+            
+            renderProducts(); // อัปเดตหน้าจอเพื่อเปลี่ยนปุ่ม
+            updateCartBar();
+        }
+
+        function updateCartBar() {
+            let totalQty = 0;
+            let totalPrice = 0;
+            
+            for (let id in cart) {
+                const product = products.find(p => p.id === id);
+                totalQty += cart[id];
+                totalPrice += product.price * cart[id];
+            }
+            
+            document.getElementById("cart-qty-total").innerText = totalQty;
+            document.getElementById("cart-price-total").innerText = totalPrice;
+            
+            const bar = document.getElementById("cart-bar");
+            if (totalQty > 0) {
+                bar.classList.remove("translate-y-full");
+            } else {
+                bar.classList.add("translate-y-full");
+            }
+        }
+
+        function openConfirmModal() {
+            const reviewDiv = document.getElementById("cart-items-review");
+            let html = '';
+            for (let id in cart) {
+                const p = products.find(prod => prod.id === id);
+                html += `
+                    <div class="flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <div>
+                            <p class="font-bold text-sm text-gray-800">${p.name}</p>
+                            <p class="text-xs text-gray-500">฿${p.price} x ${cart[id]}</p>
+                        </div>
+                        <p class="font-bold text-blue-600">฿${p.price * cart[id]}</p>
+                    </div>
+                `;
+            }
+            reviewDiv.innerHTML = html;
+            document.getElementById("confirm-modal").classList.remove("hidden");
+        }
+
+        function closeConfirmModal() { document.getElementById("confirm-modal").classList.add("hidden"); }
+
+        // --- 5. ส่งออเดอร์เข้า Cloud ---
+        function submitOrder() {
+            const orderItems = [];
+            for (let id in cart) {
+                const p = products.find(prod => prod.id === id);
+                orderItems.push({ detail: p, qty: cart[id] });
+            }
+
+            // บันทึกลงตาราง incoming_orders เพื่อให้ POS ดึงไปแสดง
+            db.collection("incoming_orders").add({
+                tableId: tableId,
+                tableName: tableName,
+                items: orderItems,
+                status: "pending",
+                timestamp: firebase.firestore.FieldValue.serverTimestamp()
+            }).then(() => {
+                closeConfirmModal();
+                document.getElementById("cart-bar").classList.add("hidden");
+                document.getElementById("success-modal").classList.remove("hidden");
+                cart = {}; // ล้างตะกร้า
+            }).catch(e => {
+                alert("เกิดข้อผิดพลาดในการส่งออเดอร์ กรุณาแจ้งพนักงาน");
+            });
+        }
+    </script>
+</body>
+</html>
