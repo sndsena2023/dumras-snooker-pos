@@ -15,10 +15,10 @@ const db = firebase.firestore();
 
 const ONESIGNAL_APP_ID = "d69a2e29-6636-4ac6-b7fe-898e3210754f";
 const ONESIGNAL_REST_KEY = "os_v2_app_22nc4klggzfmnn76rghdeedvj7k6ymxxxxaukw5prv77asp7lk36yh323jsgjyfzp2x3klbqjwfc5m2qsea3f6jtq3bmhcc5ykn36zi";
-const PROMPTPAY_NUMBER = "0812345678"; // <--- ⚠️ เปลี่ยนเป็นเบอร์พร้อมเพย์ที่นี่
+const PROMPTPAY_NUMBER = "0812345678"; 
 
-const RATES = { NORMAL: 90, VIP: 120 }; // ราคาต่อชั่วโมง
-const MINIMUM_MINUTES = 30; // ขั้นต่ำกี่นาที
+const RATES = { NORMAL: 90, VIP: 120 }; 
+const MINIMUM_MINUTES = 30; 
 
 const TABLES = [
     { id: "N1", type: "NORMAL", name: "โต๊ะ 1" }, { id: "N2", type: "NORMAL", name: "โต๊ะ 2" },
@@ -40,15 +40,12 @@ let PRODUCTS = [
 const activeTables = {}; 
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 
-// =========================================================
-// [เพิ่มใหม่] อัปโหลดเมนูอาหารไปไว้บน Cloud เพื่อให้ลูกค้าเห็น
-// =========================================================
 function syncProductsToCloud() {
     db.collection("system").doc("products").set({ list: PRODUCTS }).catch(e => console.error("Sync Error", e));
 }
 
 // =========================================================
-// [เพิ่มใหม่] ระบบดักจับออเดอร์จากมือถือลูกค้า (Real-time)
+// [อัปเดต] ระบบดักจับออเดอร์จากมือถือลูกค้า พร้อมเสียงพูด!
 // =========================================================
 db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((snapshot) => {
     snapshot.docChanges().forEach((change) => {
@@ -56,12 +53,10 @@ db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((sn
             const orderData = change.doc.data();
             const tId = orderData.tableId;
             
-            // ถ้าร้านยังไม่ได้กดเปิดโต๊ะ ให้เปิดอัตโนมัติ
             if (!activeTables[tId]) {
                  activeTables[tId] = { startTime: new Date(), orders: {} };
             }
             
-            // เพิ่มสินค้าลงในโต๊ะ
             orderData.items.forEach(item => {
                 if (activeTables[tId].orders[item.detail.id]) {
                     activeTables[tId].orders[item.detail.id].qty += item.qty;
@@ -72,17 +67,26 @@ db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((sn
             
             saveDataLocally();
             
-            // รีเฟรชหน้าจอถ้าเข้าสู่ระบบอยู่
             if (!document.getElementById("dashboard-screen").classList.contains("hidden")) {
                 renderTables();
             }
             
-            // เปลี่ยนสถานะบิลเพื่อไม่ให้เด้งซ้ำ
             change.doc.ref.update({ status: "received" });
             
-            // เด้งแจ้งเตือนพร้อมเสียง (ถ้าพนักงานล็อกอินอยู่)
             if(currentStaff) {
-                alert(`🔔 มีออเดอร์ใหม่จากมือถือลูกค้า!\nโต๊ะ: ${orderData.tableName}`);
+                // 1. สั่งให้เครื่องพูดเตือนเป็นภาษาไทย
+                if ('speechSynthesis' in window) {
+                    const speech = new SpeechSynthesisUtterance(`มีออเดอร์เข้าครับ ${orderData.tableName}`);
+                    speech.lang = 'th-TH'; // สำเนียงไทย
+                    speech.rate = 0.9;     // ความเร็วพอดีๆ
+                    speech.volume = 1;     // เสียงดังสุด
+                    window.speechSynthesis.speak(speech);
+                }
+                
+                // 2. เด้งหน้าต่างเตือนพนักงานบนจอ (หน่วงเวลา 0.5 วิ ให้เสียงพูดก่อน)
+                setTimeout(() => {
+                    alert(`🔔 มีออเดอร์ใหม่จากลูกค้า!\nโต๊ะ: ${orderData.tableName}`);
+                }, 500);
             }
         }
     });
@@ -103,7 +107,7 @@ initializeDefaultStaff();
 function saveDataLocally() {
     localStorage.setItem("dumras_tables", JSON.stringify(activeTables));
     localStorage.setItem("dumras_products", JSON.stringify(PRODUCTS));
-    syncProductsToCloud(); // อัปเดต Cloud ด้วยเวลาของเปลี่ยน
+    syncProductsToCloud();
 }
 function loadDataLocally() {
     const savedProducts = localStorage.getItem("dumras_products");
@@ -117,7 +121,7 @@ function loadDataLocally() {
             activeTables[id] = parsedTables[id];
         }
     }
-    syncProductsToCloud(); // ดันข้อมูลขึ้น Cloud ตอนเริ่มแอป
+    syncProductsToCloud();
 }
 loadDataLocally();
 
@@ -413,14 +417,17 @@ function saveReceiptImage() { html2canvas(document.getElementById("receipt-paper
 function closeReceiptModal() { document.getElementById("receipt-modal").classList.add("hidden"); }
 
 // =========================================================
-// 9. ระบบบัญชี และรายงาน
+// 9. ระบบบัญชี 
 // =========================================================
 function openReportModal() {
     document.getElementById("report-modal").classList.remove("hidden");
     const datePicker = document.getElementById("report-date-picker");
     if (!datePicker.value) {
         const today = new Date();
-        datePicker.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        datePicker.value = `${yyyy}-${mm}-${dd}`;
     }
     loadReportData();
 }
