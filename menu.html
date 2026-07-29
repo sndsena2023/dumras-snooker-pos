@@ -18,17 +18,19 @@
 </head>
 <body class="text-gray-800">
 
+    <!-- [อัปเดต] หน้าต่างบล็อก โต๊ะปิด หรือ QR หมดอายุ -->
+    <div id="closed-table-overlay" class="fixed inset-0 z-[100] bg-gray-900/95 flex flex-col items-center justify-center p-6 text-center transition-opacity duration-300">
+        <div class="text-6xl mb-6 animate-pulse" id="overlay-icon">🔒</div>
+        <h2 class="text-2xl font-bold text-white mb-2" id="overlay-title">กำลังตรวจสอบข้อมูล...</h2>
+        <p class="text-gray-300 mb-8 text-sm" id="overlay-desc">กรุณารอสักครู่</p>
+    </div>
+
     <header class="bg-gradient-to-r from-blue-700 to-blue-500 text-white pt-6 pb-4 px-5 shadow-lg rounded-b-[2rem] sticky top-0 z-30">
         <div class="flex items-center gap-3 mb-2">
             <img src="icon-512.png" alt="โลโก้" class="w-12 h-12 object-contain bg-white rounded-full p-1 shadow-md">
-            <div>
-                <h1 class="font-bold text-xl leading-none">ดำรัส สนุ๊กเกอร์</h1>
-                <p class="text-blue-100 text-sm opacity-90">บริการสั่งอาหารที่โต๊ะ</p>
-            </div>
+            <div><h1 class="font-bold text-xl leading-none">ดำรัส สนุ๊กเกอร์</h1><p class="text-blue-100 text-sm opacity-90">บริการสั่งอาหารที่โต๊ะ</p></div>
         </div>
-        <div class="bg-white/20 backdrop-blur-md rounded-xl p-2 mt-3 flex items-center justify-center gap-2 border border-white/30">
-            <span class="text-xl">🎱</span><span class="font-bold" id="table-display">กำลังเช็คหมายเลขโต๊ะ...</span>
-        </div>
+        <div class="bg-white/20 backdrop-blur-md rounded-xl p-2 mt-3 flex items-center justify-center gap-2 border border-white/30"><span class="text-xl">🎱</span><span class="font-bold" id="table-display">กำลังโหลด...</span></div>
     </header>
 
     <nav class="flex gap-2 overflow-x-auto px-4 py-4 hide-scrollbar sticky top-[120px] bg-[#f8fafc] z-20 shadow-sm" id="category-nav"></nav>
@@ -53,7 +55,7 @@
     <div id="success-modal" class="hidden fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 text-center"><div class="w-32 h-32 bg-green-100 rounded-full flex items-center justify-center text-6xl mb-6 shadow-inner animate-bounce">🎉</div><h2 class="text-3xl font-bold text-gray-800 mb-2">รับออเดอร์แล้ว!</h2><p class="text-gray-500 mb-10 text-lg">กำลังเตรียมเสิร์ฟถึงโต๊ะครับ</p><button onclick="location.reload()" class="btn-bounce w-full max-w-xs bg-gray-100 text-gray-700 font-bold py-4 rounded-2xl">← กลับไปสั่งเพิ่ม</button></div>
 
     <!-- ถูกยกเลิก -->
-    <div id="reject-modal" class="hidden fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 text-center"><div class="text-6xl mb-4">🚫</div><h2 class="text-2xl font-bold text-red-600 mb-2">ออเดอร์ถูกยกเลิก</h2><p class="text-gray-500 mb-8">ขออภัยครับ สินค้าอาจจะหมด หรือโต๊ะยังไม่ได้เปิด กรุณาติดต่อพนักงานครับ</p><button onclick="location.reload()" class="bg-gray-100 text-gray-700 font-bold py-4 px-8 rounded-2xl w-full">รับทราบ</button></div>
+    <div id="reject-modal" class="hidden fixed inset-0 z-[60] bg-white flex flex-col items-center justify-center p-6 text-center"><div class="text-6xl mb-4">🚫</div><h2 class="text-2xl font-bold text-red-600 mb-2">ออเดอร์ถูกยกเลิก</h2><p class="text-gray-500 mb-8">ขออภัยครับ สินค้าอาจจะหมด กรุณาติดต่อพนักงานครับ</p><button onclick="location.reload()" class="bg-gray-100 text-gray-700 font-bold py-4 px-8 rounded-2xl w-full">รับทราบ</button></div>
 
     <script>
         const firebaseConfig = { apiKey: "AIzaSyD3_M85acXiPsrDNzvzHOPPW9cjRsL2NRk", authDomain: "dumras-snooker-pos.firebaseapp.com", projectId: "dumras-snooker-pos", storageBucket: "dumras-snooker-pos.firebasestorage.app", messagingSenderId: "985526889212", appId: "1:985526889212:web:f4c71ad06b838cf9748579" };
@@ -61,35 +63,55 @@
 
         const urlParams = new URLSearchParams(window.location.search);
         const tableId = urlParams.get('table');
+        const sessionId = urlParams.get('session'); // [ใหม่] อ่านรหัสลับจาก URL
+
         const tableNames = { "N1":"โต๊ะ 1", "N2":"โต๊ะ 2", "N3":"โต๊ะ 3", "N4":"โต๊ะ 4", "V1":"VIP 1", "V2":"VIP 2", "V3":"VIP 3" };
         const tableName = tableNames[tableId] || tableId;
 
-        if (!tableId) { document.getElementById("table-display").innerText = "⚠️ ไม่พบข้อมูลโต๊ะ"; document.getElementById("table-display").classList.replace("text-white", "text-red-200"); } 
-        else { document.getElementById("table-display").innerText = `กำลังนั่งอยู่ที่: ${tableName}`; }
+        if (!tableId || !sessionId) { 
+            showBlockOverlay("❌ ลิงก์ไม่ถูกต้อง", "กรุณาสแกน QR Code จากที่โต๊ะเท่านั้นครับ");
+        } else { 
+            document.getElementById("table-display").innerText = `กำลังนั่งอยู่ที่: ${tableName}`; 
+        }
+
+        // [ใหม่] เช็ค Session ID จาก Cloud (ป้องกันคนเปิดลิงก์เก่า)
+        db.collection("system").doc("active_tables").onSnapshot(doc => {
+            if (doc.exists) {
+                const sessionsMap = doc.data().sessions || {};
+                const currentActiveSession = sessionsMap[tableId];
+
+                if (!currentActiveSession) {
+                    showBlockOverlay("🎱 โต๊ะยังไม่เปิดบิล", "กรุณาแจ้งพนักงานเพื่อเปิดโต๊ะ<br>ก่อนเริ่มสั่งอาหารและเครื่องดื่มนะครับ");
+                } else if (currentActiveSession !== sessionId) {
+                    showBlockOverlay("⏳ QR Code หมดอายุ", "QR Code นี้ถูกใช้งานในรอบก่อนไปแล้ว<br>กรุณาสแกน QR Code ใหม่จากเครื่องพนักงานครับ");
+                } else {
+                    document.getElementById("closed-table-overlay").classList.add("hidden");
+                }
+            }
+        });
+
+        function showBlockOverlay(title, desc) {
+            document.getElementById("overlay-icon").innerText = "🔒";
+            document.getElementById("overlay-title").innerText = title;
+            document.getElementById("overlay-desc").innerHTML = desc;
+            document.getElementById("closed-table-overlay").classList.remove("hidden");
+        }
 
         let products = [], cart = {}, currentFilter = 'all';
         const catIcons = { "snack": "🍟", "water": "💧", "softdrink": "🥤", "alcohol": "🍺" }, catNames = { "snack": "อาหาร/ขนม", "water": "น้ำดื่ม", "softdrink": "น้ำอัดลม", "alcohol": "แอลกอฮอล์" };
 
-        // [อัปเดต] ดึงข้อมูลแบบ Real-time ถ้ามีอะไรเปลี่ยนแปลงหน้าจอจะรีเฟรชเองทันที
         db.collection("system").doc("products").onSnapshot(doc => {
             if (doc.exists) {
                 products = doc.data().list;
-                
-                // ล้างของในตะกร้า ถ้าระหว่างที่กำลังจะกดสั่ง พนักงานดันกดปุ่ม 'ของหมด' พอดี
                 let cartChanged = false;
-                for(let id in cart) {
-                    const p = products.find(prod => prod.id === id);
-                    if(!p || p.inStock === false) { delete cart[id]; cartChanged = true; }
-                }
-                if(cartChanged) { alert("⚠️ ขออภัย สินค้าบางรายการในตะกร้าของคุณเพิ่งหมดไป ระบบได้นำออกจากตะกร้าแล้วครับ"); updateCartBar(); }
-                
+                for(let id in cart) { const p = products.find(prod => prod.id === id); if(!p || p.inStock === false) { delete cart[id]; cartChanged = true; } }
+                if(cartChanged) { alert("⚠️ สินค้าบางรายการเพิ่งหมดไป ระบบได้นำออกจากตะกร้าแล้วครับ"); updateCartBar(); }
                 renderCategoryNav(); renderProducts();
             }
         });
 
         function renderCategoryNav() {
-            const categories = ['all', ...new Set(products.map(p => p.category))];
-            let html = '';
+            const categories = ['all', ...new Set(products.map(p => p.category))]; let html = '';
             categories.forEach(cat => {
                 const activeClass = currentFilter === cat ? "bg-blue-600 text-white shadow border-blue-600" : "bg-white text-gray-600 border-gray-200";
                 html += `<button onclick="currentFilter='${cat}'; renderCategoryNav(); renderProducts();" class="flex items-center gap-1.5 px-4 py-2 rounded-full border text-sm font-medium whitespace-nowrap ${activeClass}"><span>${cat==='all'?"🍽️":(catIcons[cat]||"✨")}</span> ${cat==='all'?"ทั้งหมด":(catNames[cat]||cat)}</button>`;
@@ -98,21 +120,14 @@
         }
 
         function renderProducts() {
-            let html = '<div class="space-y-4">'; 
-            const filteredProducts = currentFilter === 'all' ? products : products.filter(p => p.category === currentFilter);
-            
+            let html = '<div class="space-y-4">'; const filteredProducts = currentFilter === 'all' ? products : products.filter(p => p.category === currentFilter);
             filteredProducts.forEach(p => {
-                const qty = cart[p.id] || 0; 
-                const inStock = p.inStock !== false; // เช็คสถานะหมด
-                
+                const qty = cart[p.id] || 0; const inStock = p.inStock !== false; 
                 html += `
                     <div class="bg-white rounded-2xl p-4 shadow-sm border border-gray-100 flex items-center gap-4 transition-transform relative overflow-hidden ${qty>0 ? 'border-blue-300 bg-blue-50/50' : ''} ${!inStock ? 'out-of-stock' : ''}">
-                        
                         ${!inStock ? `<div class="absolute inset-0 bg-white/60 z-10 flex items-center justify-center"><span class="bg-gray-800 text-white font-bold px-4 py-1 rounded-full text-sm shadow-md">🚫 สินค้าหมด</span></div>` : ''}
-
                         <div class="w-16 h-16 bg-gray-50 rounded-xl flex items-center justify-center text-3xl shadow-inner shrink-0">${catIcons[p.category] || "🛍️"}</div>
                         <div class="flex-1"><h3 class="font-bold text-gray-800 leading-tight mb-1">${p.name}</h3><p class="text-blue-600 font-bold text-sm">฿${p.price}</p></div>
-                        
                         <div class="shrink-0 relative z-20">
                             ${qty === 0 ? 
                                 `<button onclick="updateCart('${p.id}', 1)" class="btn-bounce bg-blue-50 text-blue-600 font-bold w-10 h-10 rounded-full flex items-center justify-center shadow-sm"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>` : 
@@ -141,42 +156,29 @@
         function openConfirmModal() {
             if(Object.keys(cart).length === 0) return;
             let html = '';
-            for (let id in cart) {
-                const p = products.find(prod => prod.id === id);
-                html += `<div class="flex items-center gap-3 bg-white p-3 rounded-2xl border border-gray-100"><div class="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center text-xl shrink-0">${catIcons[p.category]||"🛍️"}</div><div class="flex-1"><p class="font-bold text-sm text-gray-800">${p.name}</p><p class="text-xs text-gray-500 mt-0.5">฿${p.price} <span class="mx-1">✕</span> <span class="font-bold">${cart[id]}</span></p></div><p class="font-bold text-blue-600 text-lg shrink-0">฿${p.price * cart[id]}</p></div>`;
-            }
+            for (let id in cart) { const p = products.find(prod => prod.id === id); html += `<div class="flex items-center gap-3 bg-white p-3 rounded-2xl border border-gray-100"><div class="w-10 h-10 bg-gray-50 rounded-lg flex items-center justify-center text-xl shrink-0">${catIcons[p.category]||"🛍️"}</div><div class="flex-1"><p class="font-bold text-sm text-gray-800">${p.name}</p><p class="text-xs text-gray-500 mt-0.5">฿${p.price} <span class="mx-1">✕</span> <span class="font-bold">${cart[id]}</span></p></div><p class="font-bold text-blue-600 text-lg shrink-0">฿${p.price * cart[id]}</p></div>`; }
             document.getElementById("cart-items-review").innerHTML = html; document.getElementById("confirm-modal").classList.remove("hidden");
         }
         function closeConfirmModal() { document.getElementById("confirm-modal").classList.add("hidden"); }
 
         function submitOrder(event) {
-            if(!tableId) { alert("กรุณาสแกน QR Code ของโต๊ะอีกครั้ง"); return; }
+            if(!tableId) { alert("เกิดข้อผิดพลาด กรุณาสแกน QR Code ใหม่อีกครั้ง"); return; }
             const btn = event.currentTarget; btn.innerHTML = `<span class="animate-spin text-xl">⏳</span> ส่ง...`; btn.disabled = true;
 
-            const orderItems = [];
-            for (let id in cart) { const p = products.find(prod => prod.id === id); orderItems.push({ detail: p, qty: cart[id] }); }
+            const orderItems = []; for (let id in cart) { const p = products.find(prod => prod.id === id); orderItems.push({ detail: p, qty: cart[id] }); }
 
             db.collection("incoming_orders").add({
                 tableId: tableId, tableName: tableName, items: orderItems, status: "pending", timestamp: firebase.firestore.FieldValue.serverTimestamp()
             }).then((docRef) => {
                 closeConfirmModal(); document.getElementById("cart-bar").classList.add("hidden"); cart = {}; 
                 if (navigator.vibrate) navigator.vibrate([100, 50, 100]); 
-                
-                // โชว์หน้ารอการยืนยัน
                 document.getElementById("waiting-modal").classList.remove("hidden");
                 
-                // [ใหม่] ติดตามสถานะออเดอร์ว่าพนักงานกดยืนยัน หรือยกเลิก
                 db.collection("incoming_orders").doc(docRef.id).onSnapshot(doc => {
                     const data = doc.data();
-                    if(data.status === "accepted") {
-                        document.getElementById("waiting-modal").classList.add("hidden");
-                        document.getElementById("success-modal").classList.remove("hidden");
-                    } else if (data.status === "rejected") {
-                        document.getElementById("waiting-modal").classList.add("hidden");
-                        document.getElementById("reject-modal").classList.remove("hidden");
-                    }
+                    if(data.status === "accepted") { document.getElementById("waiting-modal").classList.add("hidden"); document.getElementById("success-modal").classList.remove("hidden"); } 
+                    else if (data.status === "rejected") { document.getElementById("waiting-modal").classList.add("hidden"); document.getElementById("reject-modal").classList.remove("hidden"); }
                 });
-
             }).catch(e => { btn.innerHTML = `✅ ยืนยันส่งออเดอร์`; btn.disabled = false; alert("เกิดข้อผิดพลาด"); });
         }
     </script>
