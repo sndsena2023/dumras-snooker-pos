@@ -41,69 +41,54 @@ const activeTables = {};
 let currentStaff = null, currentPin = "", currentlyOrderingTableId = null, pendingCheckoutData = null; 
 let incomingOrdersData = []; 
 
-// [ใหม่] บังคับโหลดเสียงรอไว้ก่อน เพื่อให้พร้อมใช้เสมอ
-if ('speechSynthesis' in window) {
-    window.speechSynthesis.getVoices();
+const bellSound = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+if ('speechSynthesis' in window) { window.speechSynthesis.getVoices(); }
+
+// [อัปเดต] เก็บ Session ID ของโต๊ะทั้งหมดแล้วดันขึ้น Cloud
+function syncTablesToCloud() {
+    const sessionData = {};
+    for(let id in activeTables) {
+        sessionData[id] = activeTables[id].sessionId;
+    }
+    db.collection("system").doc("active_tables").set({ sessions: sessionData }).catch(e => console.error(e));
 }
 
 function syncProductsToCloud() {
-    db.collection("system").doc("products").set({ list: PRODUCTS }).catch(e => console.error("Sync Error", e));
+    db.collection("system").doc("products").set({ list: PRODUCTS }).catch(e => console.error(e));
 }
 
 // =========================================================
-// 2. ระบบจัดการออเดอร์ พร้อมเสียงพูดที่ชัดขึ้น
+// 2. ระบบจัดการออเดอร์
 // =========================================================
 db.collection("incoming_orders").where("status", "==", "pending").onSnapshot((snapshot) => {
     incomingOrdersData = [];
     let isNewAdded = false;
-
-    snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") isNewAdded = true;
-    });
-
-    snapshot.forEach(doc => {
-        incomingOrdersData.push({ id: doc.id, ...doc.data() });
-    });
+    snapshot.docChanges().forEach((change) => { if (change.type === "added") isNewAdded = true; });
+    snapshot.forEach(doc => { incomingOrdersData.push({ id: doc.id, ...doc.data() }); });
     
-    const badge = document.getElementById("pending-badge");
-    const btn = document.getElementById("btn-pending-orders");
+    const badge = document.getElementById("pending-badge"), btn = document.getElementById("btn-pending-orders");
     
     if(incomingOrdersData.length > 0) {
-        btn.classList.remove("hidden");
-        badge.innerText = incomingOrdersData.length;
-        
-        // [อัปเดต] ระบบเสียงพูดภาษาไทยเวอร์ชันชัดเจน
-        if(isNewAdded && currentStaff && 'speechSynthesis' in window) {
-            const lastOrder = incomingOrdersData[incomingOrdersData.length-1];
-            
-            // ใส่ลูกน้ำ (,) หรือจุด (...) เพื่อบังคับให้ระบบเว้นวรรคหายใจ
-            const textToSpeak = `มีออเดอร์ใหม่เข้าครับ, จาก ${lastOrder.tableName}`;
-            const speech = new SpeechSynthesisUtterance(textToSpeak);
-            
-            speech.lang = 'th-TH';
-            speech.rate = 0.85; // ช้าลงนิดนึง ให้อ่านชัดทุกคำ
-            speech.pitch = 1.0;
-            
-            // ค้นหาเสียงคุณภาพสูงที่ฝังอยู่ในเครื่อง (Google หรือ Apple)
-            let voices = window.speechSynthesis.getVoices();
-            let thaiVoices = voices.filter(v => v.lang.includes('th'));
-            
-            if (thaiVoices.length > 0) {
-                // พยายามเลือกเสียงที่ชื่อมีคำว่า Google, Siri หรือเสียงที่มีคุณภาพดีกว่า default
-                let premiumVoice = thaiVoices.find(v => v.name.includes('Google') || v.name.includes('Siri') || v.name.includes('Kanya') || v.name.includes('Narisa'));
-                speech.voice = premiumVoice || thaiVoices[0];
+        btn.classList.remove("hidden"); badge.innerText = incomingOrdersData.length;
+        if(isNewAdded && currentStaff) {
+            bellSound.play().catch(e => console.log(e));
+            if ('speechSynthesis' in window) {
+                const lastOrder = incomingOrdersData[incomingOrdersData.length-1];
+                const speech = new SpeechSynthesisUtterance(`มีออเดอร์ใหม่เข้าครับ, จาก ${lastOrder.tableName}`);
+                speech.lang = 'th-TH'; speech.rate = 0.85; speech.pitch = 1.0;
+                let voices = window.speechSynthesis.getVoices(); let thaiVoices = voices.filter(v => v.lang.includes('th'));
+                if (thaiVoices.length > 0) {
+                    let premiumVoice = thaiVoices.find(v => v.name.includes('Google') || v.name.includes('Siri') || v.name.includes('Kanya') || v.name.includes('Narisa'));
+                    speech.voice = premiumVoice || thaiVoices[0];
+                }
+                window.speechSynthesis.speak(speech);
             }
-
-            window.speechSynthesis.speak(speech);
+            openPendingModal();
         }
     } else {
-        btn.classList.add("hidden");
-        closePendingModal(); 
+        btn.classList.add("hidden"); closePendingModal(); 
     }
-
-    if (!document.getElementById("pending-modal").classList.contains("hidden")) {
-        renderPendingOrders();
-    }
+    if (!document.getElementById("pending-modal").classList.contains("hidden")) { renderPendingOrders(); }
 });
 
 function openPendingModal() { document.getElementById("pending-modal").classList.remove("hidden"); renderPendingOrders(); }
@@ -111,35 +96,14 @@ function closePendingModal() { document.getElementById("pending-modal").classLis
 
 function renderPendingOrders() {
     const container = document.getElementById("pending-orders-list");
-    if(incomingOrdersData.length === 0) {
-        container.innerHTML = `<p class="text-center text-gray-400 py-10">ไม่มีออเดอร์ค้าง</p>`;
-        return;
-    }
-
+    if(incomingOrdersData.length === 0) { container.innerHTML = `<p class="text-center text-gray-400 py-10">ไม่มีออเดอร์ค้าง</p>`; return; }
     let html = '';
     incomingOrdersData.forEach(order => {
         let itemsHtml = '';
         order.items.forEach((it, index) => {
-            itemsHtml += `
-                <div class="flex justify-between items-center text-sm border-b border-yellow-100/50 py-1.5 last:border-0">
-                    <span class="text-gray-700">- ${it.detail.name} <span class="font-bold text-blue-600 ml-1">x${it.qty}</span></span>
-                    <button onclick="removePendingItem('${order.id}', ${index})" class="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 transition font-bold">ตัดออก (หมด)</button>
-                </div>`;
+            itemsHtml += `<div class="flex justify-between items-center text-sm border-b border-yellow-100/50 py-1.5 last:border-0"><span class="text-gray-700">- ${it.detail.name} <span class="font-bold text-blue-600 ml-1">x${it.qty}</span></span><button onclick="removePendingItem('${order.id}', ${index})" class="text-[10px] bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 transition font-bold">ตัดออก (หมด)</button></div>`;
         });
-
-        html += `
-            <div class="border border-yellow-200 bg-yellow-50 rounded-xl p-4 shadow-sm">
-                <div class="flex justify-between items-center mb-2 border-b border-yellow-200 pb-2">
-                    <h3 class="font-bold text-lg text-yellow-700">📍 ${order.tableName}</h3>
-                    <span class="text-xs text-gray-500">รอรับออเดอร์...</span>
-                </div>
-                <div class="mb-4 space-y-1 bg-white p-2 rounded-lg border border-yellow-100">${itemsHtml}</div>
-                <div class="flex gap-2">
-                    <button onclick="acceptOrder('${order.id}')" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-lg shadow">✅ รับออเดอร์นี้</button>
-                    <button onclick="rejectOrder('${order.id}')" class="flex-1 bg-red-100 hover:bg-red-200 text-red-600 font-bold py-2 rounded-lg border border-red-200">❌ ยกเลิกทั้งหมด</button>
-                </div>
-            </div>
-        `;
+        html += `<div class="border border-yellow-200 bg-yellow-50 rounded-xl p-4 shadow-sm"><div class="flex justify-between items-center mb-2 border-b border-yellow-200 pb-2"><h3 class="font-bold text-lg text-yellow-700">📍 ${order.tableName}</h3><span class="text-xs text-gray-500">รอรับออเดอร์...</span></div><div class="mb-4 space-y-1 bg-white p-2 rounded-lg border border-yellow-100">${itemsHtml}</div><div class="flex gap-2"><button onclick="acceptOrder('${order.id}')" class="flex-1 bg-green-500 hover:bg-green-600 text-white font-bold py-2 rounded-lg shadow">✅ รับออเดอร์นี้</button><button onclick="rejectOrder('${order.id}')" class="flex-1 bg-red-100 hover:bg-red-200 text-red-600 font-bold py-2 rounded-lg border border-red-200">❌ ยกเลิกทั้งหมด</button></div></div>`;
     });
     container.innerHTML = html;
 }
@@ -148,16 +112,14 @@ window.removePendingItem = function(orderId, itemIndex) {
     const order = incomingOrdersData.find(o => o.id === orderId);
     if(order) {
         order.items.splice(itemIndex, 1);
-        if(order.items.length === 0) { rejectOrder(orderId); } 
-        else { db.collection("incoming_orders").doc(orderId).update({ items: order.items }); }
+        if(order.items.length === 0) { rejectOrder(orderId); } else { db.collection("incoming_orders").doc(orderId).update({ items: order.items }); }
     }
 };
 
 function acceptOrder(orderId) {
-    const order = incomingOrdersData.find(o => o.id === orderId);
-    if(!order) return;
+    const order = incomingOrdersData.find(o => o.id === orderId); if(!order) return;
     const tId = order.tableId;
-    if (!activeTables[tId]) { activeTables[tId] = { startTime: new Date(), orders: {} }; }
+    if (!activeTables[tId]) { startTable(tId); } // ใช้ startTable เพื่อให้มี sessionId
     order.items.forEach(item => {
         if (activeTables[tId].orders[item.detail.id]) { activeTables[tId].orders[item.detail.id].qty += item.qty; } 
         else { activeTables[tId].orders[item.detail.id] = { detail: item.detail, qty: item.qty }; }
@@ -166,9 +128,7 @@ function acceptOrder(orderId) {
 }
 
 function rejectOrder(orderId) {
-    if(confirm("แน่ใจหรือไม่ที่จะยกเลิกออเดอร์นี้ทั้งหมด?")) {
-        db.collection("incoming_orders").doc(orderId).update({ status: "rejected" }); 
-    }
+    if(confirm("แน่ใจหรือไม่ที่จะยกเลิกออเดอร์นี้ทั้งหมด?")) { db.collection("incoming_orders").doc(orderId).update({ status: "rejected" }); }
 }
 
 // =========================================================
@@ -187,7 +147,9 @@ function saveDataLocally() {
     localStorage.setItem("dumras_tables", JSON.stringify(activeTables));
     localStorage.setItem("dumras_products", JSON.stringify(PRODUCTS));
     syncProductsToCloud();
+    syncTablesToCloud(); 
 }
+
 function loadDataLocally() {
     const savedProducts = localStorage.getItem("dumras_products");
     if (savedProducts) PRODUCTS = JSON.parse(savedProducts);
@@ -198,21 +160,27 @@ function loadDataLocally() {
         const parsedTables = JSON.parse(savedTables);
         for (let id in parsedTables) {
             parsedTables[id].startTime = new Date(parsedTables[id].startTime);
+            // ป้องกันโต๊ะที่ค้างไว้จากระบบเก่าไม่มี sessionId
+            if(!parsedTables[id].sessionId) parsedTables[id].sessionId = 'old_sess_' + new Date().getTime();
             activeTables[id] = parsedTables[id];
         }
     }
-    syncProductsToCloud();
+    syncProductsToCloud(); syncTablesToCloud();
 }
 loadDataLocally();
 
-setInterval(() => {
-    if (currentStaff && !document.getElementById("dashboard-screen").classList.contains("hidden")) { renderTables(); }
-}, 60000);
+setInterval(() => { if (currentStaff && !document.getElementById("dashboard-screen").classList.contains("hidden")) { renderTables(); } }, 60000);
 
 // =========================================================
 // 4. ระบบ Login
 // =========================================================
-function pressPin(num) { if (currentPin.length < 4) { currentPin += num; updatePinUI(); if (currentPin.length === 4) checkLogin(); } }
+function pressPin(num) { 
+    if (currentPin.length === 0) {
+        bellSound.play().then(() => { bellSound.pause(); bellSound.currentTime = 0; }).catch(e => {});
+        if ('speechSynthesis' in window) window.speechSynthesis.getVoices();
+    }
+    if (currentPin.length < 4) { currentPin += num; updatePinUI(); if (currentPin.length === 4) checkLogin(); } 
+}
 function clearPin() { currentPin = ""; updatePinUI(); document.getElementById("pin-error").innerText = ""; }
 function updatePinUI() { for (let i = 1; i <= 4; i++) document.getElementById(`pin-${i}`).className = (i <= currentPin.length) ? "dot active" : "dot"; }
 
@@ -220,50 +188,29 @@ async function checkLogin() {
     try {
         const querySnapshot = await db.collection("staff").where("pin", "==", currentPin).get();
         if (!querySnapshot.empty) {
-            const staffData = querySnapshot.docs[0].data();
-            currentStaff = staffData;
-            localStorage.setItem("dumras_staff_session", JSON.stringify(staffData));
-            applyLoginState();
-        } else {
-            document.getElementById("pin-error").innerText = "รหัส PIN ไม่ถูกต้อง"; setTimeout(clearPin, 800);
-        }
+            const staffData = querySnapshot.docs[0].data(); currentStaff = staffData; localStorage.setItem("dumras_staff_session", JSON.stringify(staffData)); applyLoginState();
+        } else { document.getElementById("pin-error").innerText = "รหัส PIN ไม่ถูกต้อง"; setTimeout(clearPin, 800); }
     } catch (error) { document.getElementById("pin-error").innerText = "เกิดข้อผิดพลาด"; setTimeout(clearPin, 1000); }
 }
 
 function applyLoginState() {
     document.getElementById("current-staff-name").innerText = `${currentStaff.name}`;
-    if (currentStaff.role === "admin") {
-        document.getElementById("btn-admin-manage").classList.remove("hidden");
-        document.getElementById("btn-admin-report").classList.remove("hidden");
-    } else {
-        document.getElementById("btn-admin-manage").classList.add("hidden");
-        document.getElementById("btn-admin-report").classList.add("hidden");
-    }
-    document.getElementById("login-screen").classList.add("hidden");
-    document.getElementById("dashboard-screen").classList.remove("hidden");
-    clearPin(); renderTables();
+    if (currentStaff.role === "admin") { document.getElementById("btn-admin-manage").classList.remove("hidden"); document.getElementById("btn-admin-report").classList.remove("hidden"); } 
+    else { document.getElementById("btn-admin-manage").classList.add("hidden"); document.getElementById("btn-admin-report").classList.add("hidden"); }
+    document.getElementById("login-screen").classList.add("hidden"); document.getElementById("dashboard-screen").classList.remove("hidden"); clearPin(); renderTables();
 }
 
-function restoreSession() {
-    const savedStaff = localStorage.getItem("dumras_staff_session");
-    if (savedStaff) { currentStaff = JSON.parse(savedStaff); applyLoginState(); }
-}
+function restoreSession() { const savedStaff = localStorage.getItem("dumras_staff_session"); if (savedStaff) { currentStaff = JSON.parse(savedStaff); applyLoginState(); } }
 restoreSession();
 
-function logout() {
-    currentStaff = null; localStorage.removeItem("dumras_staff_session");
-    document.getElementById("dashboard-screen").classList.add("hidden");
-    document.getElementById("login-screen").classList.remove("hidden");
-}
+function logout() { currentStaff = null; localStorage.removeItem("dumras_staff_session"); document.getElementById("dashboard-screen").classList.add("hidden"); document.getElementById("login-screen").classList.remove("hidden"); }
 
 // =========================================================
-// 5. ระบบจัดการโต๊ะ และการแก้ไขบิลโต๊ะ
+// 5. ระบบจัดการโต๊ะ (เพิ่มปุ่มสแกน QR Code)
 // =========================================================
 function renderTables() {
-    const normalContainer = document.getElementById("normal-tables-container");
-    const vipContainer = document.getElementById("vip-tables-container");
+    const normalContainer = document.getElementById("normal-tables-container"), vipContainer = document.getElementById("vip-tables-container");
     normalContainer.innerHTML = ""; vipContainer.innerHTML = "";
-
     const isAdmin = currentStaff && currentStaff.role === "admin";
 
     TABLES.forEach(table => {
@@ -276,10 +223,8 @@ function renderTables() {
 
         if (isActive) {
             if (tableData.orders) Object.values(tableData.orders).forEach(o => totalItemsCount += o.qty);
-            const startTime = tableData.startTime;
-            timeStartString = startTime.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'});
-            const diffMins = Math.floor((new Date() - startTime) / 60000);
-            timeElapsedString = `${Math.floor(diffMins / 60)} ชม. ${diffMins % 60} นาที`;
+            const startTime = tableData.startTime; timeStartString = startTime.toLocaleTimeString('th-TH', {hour: '2-digit', minute:'2-digit'});
+            const diffMins = Math.floor((new Date() - startTime) / 60000); timeElapsedString = `${Math.floor(diffMins / 60)} ชม. ${diffMins % 60} นาที`;
         }
 
         let actionButtons = "";
@@ -289,16 +234,16 @@ function renderTables() {
             } else {
                 actionButtons = `
                     <div class="flex gap-2">
-                        <button onclick="openOrderModal('${table.id}', '${table.name}')" class="flex-1 bg-white border border-blue-500 text-blue-600 font-medium py-2 rounded-xl text-sm hover:bg-blue-50">สั่งของ</button>
-                        <button onclick="openCheckoutModal('${table.id}', '${table.name}', '${table.type}')" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-xl text-sm">เช็คบิล</button>
-                    </div>`;
+                        <button onclick="openOrderModal('${table.id}', '${table.name}')" class="flex-1 bg-white border border-blue-500 text-blue-600 font-medium py-1.5 rounded-xl text-sm hover:bg-blue-50 shadow-sm">สั่งของ</button>
+                        <button onclick="openCheckoutModal('${table.id}', '${table.name}', '${table.type}')" class="flex-1 bg-red-500 hover:bg-red-600 text-white font-medium py-1.5 rounded-xl text-sm shadow-sm">เช็คบิล</button>
+                    </div>
+                    <!-- ปุ่มเปิด QR Code ลูกค้า -->
+                    <button onclick="showDynamicQR('${table.id}', '${table.name}', '${tableData.sessionId}')" class="mt-2 w-full bg-blue-50 hover:bg-blue-100 text-blue-600 font-bold py-2 rounded-xl text-xs border border-blue-200 transition">📱 แสดง QR ให้ลูกค้าสแกน</button>
+                `;
             }
         } else {
-            if (isAdmin) {
-                actionButtons = `<div class="text-center text-sm text-gray-400 py-2">- โต๊ะว่าง -</div>`;
-            } else {
-                actionButtons = `<button onclick="startTable('${table.id}')" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 rounded-xl shadow-sm">เปิดโต๊ะ</button>`;
-            }
+            if (isAdmin) { actionButtons = `<div class="text-center text-sm text-gray-400 py-2">- โต๊ะว่าง -</div>`; } 
+            else { actionButtons = `<button onclick="startTable('${table.id}')" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 rounded-xl shadow-md text-lg">เปิดโต๊ะ</button>`; }
         }
 
         const cardHTML = `
@@ -308,11 +253,7 @@ function renderTables() {
                     <span class="text-xs px-2 py-1 rounded-full font-medium ${isActive ? 'bg-red-100 text-red-600' : 'bg-gray-200 text-gray-600'}">${isActive ? 'กำลังเล่น' : 'ว่าง'}</span>
                 </div>
                 ${isActive 
-                    ? `<div class="text-xs text-gray-600 mb-3 space-y-1">
-                         <p>⏰ เริ่มเล่น: <span class="font-bold">${timeStartString}</span></p>
-                         <p>⏱️ เล่นไปแล้ว: <span class="font-bold text-blue-600">${timeElapsedString}</span></p>
-                         <p>🛒 สั่งสินค้า: <span class="font-bold">${totalItemsCount}</span> ชิ้น</p>
-                       </div>${actionButtons}` 
+                    ? `<div class="text-xs text-gray-600 mb-3 space-y-1"><p>⏰ เริ่มเล่น: <span class="font-bold">${timeStartString}</span></p><p>⏱️ เล่นไปแล้ว: <span class="font-bold text-blue-600">${timeElapsedString}</span></p><p>🛒 สั่งสินค้า: <span class="font-bold">${totalItemsCount}</span> ชิ้น</p></div>${actionButtons}` 
                     : `<p class="text-sm text-gray-400 mb-4 text-center">- ยังไม่มีลูกค้า -</p>${actionButtons}`
                 }
             </div>
@@ -321,56 +262,54 @@ function renderTables() {
     });
 }
 
-function startTable(tableId) { activeTables[tableId] = { startTime: new Date(), orders: {} }; saveDataLocally(); renderTables(); }
+// [อัปเดต] สร้าง Session ID สุ่มทุกครั้งที่เปิดโต๊ะ
+function startTable(tableId) { 
+    const randomSession = 'sess_' + new Date().getTime() + '_' + Math.random().toString(36).substr(2, 5);
+    activeTables[tableId] = { startTime: new Date(), orders: {}, sessionId: randomSession }; 
+    saveDataLocally(); renderTables(); 
+}
+
+// [ใหม่] ฟังก์ชันสร้าง QR Code โชว์บนหน้าจอ
+function showDynamicQR(tableId, tableName, sessionId) {
+    // หา URL พื้นฐานของระบบ
+    const baseUrl = window.location.origin + window.location.pathname.replace('index.html', '').replace(/\/$/, '');
+    
+    // สร้างลิงก์ที่มีรหัสโต๊ะ และรหัส Session ลับ
+    const menuUrl = `${baseUrl}/menu.html?table=${tableId}&session=${sessionId}`;
+    
+    // ดึงรูป QR Code จาก API ฟรี
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(menuUrl)}`;
+    
+    document.getElementById("qr-modal-title").innerText = `สแกนสั่งอาหาร - ${tableName}`;
+    document.getElementById("dynamic-qr-image").src = qrUrl;
+    document.getElementById("dynamic-qr-link").href = menuUrl;
+    
+    document.getElementById("dynamic-qr-modal").classList.remove("hidden");
+}
+function closeDynamicQRModal() { document.getElementById("dynamic-qr-modal").classList.add("hidden"); }
 
 function openOrderModal(tableId, tableName) { 
-    currentlyOrderingTableId = tableId;
-    document.getElementById("order-modal-title").innerText = `สั่งของเข้า ${tableName}`;
-    document.getElementById("order-modal").classList.remove("hidden");
-    
-    document.getElementById("order-product-list").innerHTML = PRODUCTS.map(p => {
-        if (p.inStock === false) return ''; 
-        return `<button onclick="addItemToTable('${p.id}')" class="border p-2 rounded-xl text-left bg-white shadow-sm hover:border-blue-500"><div class="font-bold text-sm">${p.name}</div><div class="text-xs text-gray-500">฿${p.price}</div></button>`;
-    }).join("");
+    currentlyOrderingTableId = tableId; document.getElementById("order-modal-title").innerText = `สั่งของเข้า ${tableName}`; document.getElementById("order-modal").classList.remove("hidden");
+    document.getElementById("order-product-list").innerHTML = PRODUCTS.map(p => { if (p.inStock === false) return ''; return `<button onclick="addItemToTable('${p.id}')" class="border p-2 rounded-xl text-left bg-white shadow-sm hover:border-blue-500"><div class="font-bold text-sm">${p.name}</div><div class="text-xs text-gray-500">฿${p.price}</div></button>`; }).join("");
     renderCurrentOrders();
 }
 function closeOrderModal() { document.getElementById("order-modal").classList.add("hidden"); renderTables(); }
 
 function addItemToTable(productId) {
-    const tableOrders = activeTables[currentlyOrderingTableId].orders;
-    const product = PRODUCTS.find(p => p.id === productId);
+    const tableOrders = activeTables[currentlyOrderingTableId].orders; const product = PRODUCTS.find(p => p.id === productId);
     if (tableOrders[productId]) tableOrders[productId].qty += 1; else tableOrders[productId] = { detail: product, qty: 1 };
     saveDataLocally(); renderCurrentOrders();
 }
 
 function reduceItemFromTable(productId) {
     const tableOrders = activeTables[currentlyOrderingTableId].orders;
-    if (tableOrders[productId]) {
-        tableOrders[productId].qty -= 1;
-        if (tableOrders[productId].qty <= 0) delete tableOrders[productId];
-        saveDataLocally(); renderCurrentOrders();
-    }
+    if (tableOrders[productId]) { tableOrders[productId].qty -= 1; if (tableOrders[productId].qty <= 0) delete tableOrders[productId]; saveDataLocally(); renderCurrentOrders(); }
 }
 
 function renderCurrentOrders() {
-    const tableOrders = activeTables[currentlyOrderingTableId].orders;
-    const items = Object.values(tableOrders);
-    
-    if (items.length === 0) { 
-        document.getElementById("current-orders-list").innerHTML = "<li class='text-gray-400 text-center py-2'>ยังไม่มีรายการ</li>"; 
-        return; 
-    }
-    
-    document.getElementById("current-orders-list").innerHTML = items.map(item => `
-        <li class="flex justify-between items-center bg-white p-2 border rounded-lg shadow-sm">
-            <span>${item.detail.name} <span class="text-xs text-gray-400">(@${item.detail.price})</span></span>
-            <div class="flex items-center gap-2 bg-gray-50 p-1 rounded-md border">
-                <button onclick="reduceItemFromTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-red-500 shadow-sm font-bold">-</button>
-                <span class="font-bold text-blue-600 w-4 text-center">${item.qty}</span>
-                <button onclick="addItemToTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-blue-600 shadow-sm font-bold">+</button>
-            </div>
-        </li>
-    `).join("");
+    const tableOrders = activeTables[currentlyOrderingTableId].orders; const items = Object.values(tableOrders);
+    if (items.length === 0) { document.getElementById("current-orders-list").innerHTML = "<li class='text-gray-400 text-center py-2'>ยังไม่มีรายการ</li>"; return; }
+    document.getElementById("current-orders-list").innerHTML = items.map(item => `<li class="flex justify-between items-center bg-white p-2 border rounded-lg shadow-sm"><span>${item.detail.name} <span class="text-xs text-gray-400">(@${item.detail.price})</span></span><div class="flex items-center gap-2 bg-gray-50 p-1 rounded-md border"><button onclick="reduceItemFromTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-red-500 shadow-sm font-bold">-</button><span class="font-bold text-blue-600 w-4 text-center">${item.qty}</span><button onclick="addItemToTable('${item.detail.id}')" class="w-6 h-6 flex items-center justify-center bg-white rounded text-blue-600 shadow-sm font-bold">+</button></div></li>`).join("");
 }
 
 // =========================================================
@@ -391,16 +330,9 @@ function saveExpense() {
 function switchAdminTab(tab) {
     const prodSec = document.getElementById("admin-section-products"), staffSec = document.getElementById("admin-section-staff");
     const prodBtn = document.getElementById("tab-btn-products"), staffBtn = document.getElementById("tab-btn-staff");
-    if(tab === 'products') {
-        prodSec.classList.remove("hidden"); staffSec.classList.add("hidden");
-        prodBtn.className = "flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600"; staffBtn.className = "flex-1 pb-2 font-bold text-gray-400";
-    } else {
-        prodSec.classList.add("hidden"); staffSec.classList.remove("hidden");
-        staffBtn.className = "flex-1 pb-2 font-bold text-blue-600 border-b-2 border-blue-600"; prodBtn.className = "flex-1 pb-2 font-bold text-gray-400";
-        renderAdminStaffList();
-    }
+    if(tab === 'products') { prodSec.classList.remove("hidden"); staffSec.classList.add("hidden"); prodBtn.className = "flex-1 pb-2 font-bold text-purple-600 border-b-2 border-purple-600"; staffBtn.className = "flex-1 pb-2 font-bold text-gray-400"; } 
+    else { prodSec.classList.add("hidden"); staffSec.classList.remove("hidden"); staffBtn.className = "flex-1 pb-2 font-bold text-blue-600 border-b-2 border-blue-600"; prodBtn.className = "flex-1 pb-2 font-bold text-gray-400"; renderAdminStaffList(); }
 }
-
 function openProductManager() { document.getElementById("product-modal").classList.remove("hidden"); renderAdminProductList(); }
 function closeProductManager() { document.getElementById("product-modal").classList.add("hidden"); }
 
@@ -409,70 +341,23 @@ function renderAdminProductList() {
         const inStock = p.inStock !== false;
         const stockBtnClass = inStock ? 'bg-green-100 text-green-700 hover:bg-green-200 border-green-200' : 'bg-gray-100 text-gray-500 hover:bg-gray-200 border-gray-200 opacity-80';
         const stockText = inStock ? '✅ มีของ' : '🚫 สินค้าหมด';
-
-        return `
-        <div class="flex justify-between items-center bg-white border p-2.5 rounded-xl shadow-sm ${!inStock ? 'opacity-70 grayscale' : ''}">
-            <div class="flex items-center gap-2">
-                <button onclick="toggleStock('${p.id}')" class="px-2 py-1 rounded-lg text-xs font-bold w-16 border transition ${stockBtnClass}">${stockText}</button>
-                <div><span class="font-bold text-sm text-gray-800">${p.name}</span><span class="text-xs text-gray-400 ml-1">(${p.category})</span></div>
-            </div>
-            <div class="flex items-center gap-3">
-                <span class="text-sm font-bold text-purple-600">฿${p.price}</span>
-                <div class="border-l pl-3 flex gap-2">
-                    <button onclick="editProduct('${p.id}')" class="bg-blue-50 text-blue-500 hover:bg-blue-100 px-2 py-1 rounded text-xs">แก้ราคา</button>
-                    <button onclick="deleteProduct('${p.id}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2 py-1 rounded text-xs">ลบ</button>
-                </div>
-            </div>
-        </div>
-        `;
+        return `<div class="flex justify-between items-center bg-white border p-2.5 rounded-xl shadow-sm ${!inStock ? 'opacity-70 grayscale' : ''}"><div class="flex items-center gap-2"><button onclick="toggleStock('${p.id}')" class="px-2 py-1 rounded-lg text-xs font-bold w-16 border transition ${stockBtnClass}">${stockText}</button><div><span class="font-bold text-sm text-gray-800">${p.name}</span><span class="text-xs text-gray-400 ml-1">(${p.category})</span></div></div><div class="flex items-center gap-3"><span class="text-sm font-bold text-purple-600">฿${p.price}</span><div class="border-l pl-3 flex gap-2"><button onclick="editProduct('${p.id}')" class="bg-blue-50 text-blue-500 hover:bg-blue-100 px-2 py-1 rounded text-xs">แก้ราคา</button><button onclick="deleteProduct('${p.id}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2 py-1 rounded text-xs">ลบ</button></div></div></div>`;
     }).join("");
 }
-
-function toggleStock(id) {
-    const product = PRODUCTS.find(p => p.id === id);
-    if(product) {
-        product.inStock = product.inStock === false ? true : false;
-        saveDataLocally();
-        renderAdminProductList();
-    }
-}
-
-function addNewProduct() {
-    const name = document.getElementById("new-p-name").value, price = parseInt(document.getElementById("new-p-price").value), category = document.getElementById("new-p-category").value;
-    if (!name || isNaN(price)) { alert("ข้อมูลไม่ถูกต้อง"); return; }
-    PRODUCTS.push({ id: 'p' + new Date().getTime(), name: name, price: price, category: category, inStock: true });
-    saveDataLocally(); document.getElementById("new-p-name").value = ""; document.getElementById("new-p-price").value = ""; renderAdminProductList();
-}
-
-function editProduct(id) {
-    const product = PRODUCTS.find(p => p.id === id); if (!product) return;
-    const newPrice = prompt(`✏️ แก้ไขราคาสินค้า: ${product.name}\nราคาปัจจุบัน: ${product.price} บาท\n\nโปรดใส่ราคาใหม่:`, product.price);
-    if (newPrice !== null && newPrice.trim() !== "") {
-        const parsed = parseInt(newPrice);
-        if (!isNaN(parsed) && parsed >= 0) { product.price = parsed; saveDataLocally(); renderAdminProductList(); } else alert("❌ ราคาต้องเป็นตัวเลข");
-    }
-}
+function toggleStock(id) { const product = PRODUCTS.find(p => p.id === id); if(product) { product.inStock = product.inStock === false ? true : false; saveDataLocally(); renderAdminProductList(); } }
+function addNewProduct() { const name = document.getElementById("new-p-name").value, price = parseInt(document.getElementById("new-p-price").value), category = document.getElementById("new-p-category").value; if (!name || isNaN(price)) { alert("ข้อมูลไม่ถูกต้อง"); return; } PRODUCTS.push({ id: 'p' + new Date().getTime(), name: name, price: price, category: category, inStock: true }); saveDataLocally(); document.getElementById("new-p-name").value = ""; document.getElementById("new-p-price").value = ""; renderAdminProductList(); }
+function editProduct(id) { const product = PRODUCTS.find(p => p.id === id); if (!product) return; const newPrice = prompt(`✏️ แก้ไขราคาสินค้า: ${product.name}\nราคาปัจจุบัน: ${product.price} บาท\n\nโปรดใส่ราคาใหม่:`, product.price); if (newPrice !== null && newPrice.trim() !== "") { const parsed = parseInt(newPrice); if (!isNaN(parsed) && parsed >= 0) { product.price = parsed; saveDataLocally(); renderAdminProductList(); } else alert("❌ ราคาต้องเป็นตัวเลข"); } }
 function deleteProduct(id) { if (confirm(`⚠️ ต้องการลบสินค้านี้ใช่หรือไม่?`)) { PRODUCTS = PRODUCTS.filter(p => p.id !== id); saveDataLocally(); renderAdminProductList(); } }
 
 async function renderAdminStaffList() {
     const listDiv = document.getElementById("admin-staff-list"); listDiv.innerHTML = '<p class="text-gray-400 text-sm">กำลังโหลด...</p>';
     try {
         const snapshot = await db.collection("staff").get(); let html = "";
-        snapshot.forEach(doc => {
-            const s = doc.data(); const pinId = doc.id;
-            const btn = pinId !== "9999" ? `<button onclick="deleteStaff('${pinId}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1 rounded-lg text-xs">ลบ</button>` : `<span class="text-[10px] text-gray-400 px-2 py-1">(บัญชีหลัก)</span>`;
-            html += `<div class="flex justify-between items-center bg-white border p-2.5 rounded-xl shadow-sm"><div><span class="font-bold text-sm">${s.name}</span> <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-2">PIN: ${s.pin}</span></div><div class="flex items-center gap-2"><span class="text-xs font-bold px-2.5 py-1 rounded-full ${s.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${s.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}</span>${btn}</div></div>`;
-        });
+        snapshot.forEach(doc => { const s = doc.data(); const pinId = doc.id; const btn = pinId !== "9999" ? `<button onclick="deleteStaff('${pinId}')" class="bg-red-50 text-red-500 hover:bg-red-100 px-2.5 py-1 rounded-lg text-xs">ลบ</button>` : `<span class="text-[10px] text-gray-400 px-2 py-1">(บัญชีหลัก)</span>`; html += `<div class="flex justify-between items-center bg-white border p-2.5 rounded-xl shadow-sm"><div><span class="font-bold text-sm">${s.name}</span> <span class="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded ml-2">PIN: ${s.pin}</span></div><div class="flex items-center gap-2"><span class="text-xs font-bold px-2.5 py-1 rounded-full ${s.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${s.role === 'admin' ? 'เจ้าของร้าน' : 'พนักงาน'}</span>${btn}</div></div>`; });
         listDiv.innerHTML = html;
     } catch(e) {}
 }
-async function addNewStaff() {
-    const name = document.getElementById("new-s-name").value.trim(), pin = document.getElementById("new-s-pin").value.trim(), role = document.getElementById("new-s-role").value;
-    if (!name || pin.length !== 4 || isNaN(pin)) { alert("รหัส PIN ต้องมี 4 หลัก"); return; }
-    const checkPin = await db.collection("staff").where("pin", "==", pin).get();
-    if(!checkPin.empty) { alert("PIN ซ้ำ"); return; }
-    await db.collection("staff").doc(pin).set({ id: 'S' + Math.floor(10 + Math.random() * 90), name: name, pin: pin, role: role }); alert("สำเร็จ!"); renderAdminStaffList();
-}
+async function addNewStaff() { const name = document.getElementById("new-s-name").value.trim(), pin = document.getElementById("new-s-pin").value.trim(), role = document.getElementById("new-s-role").value; if (!name || pin.length !== 4 || isNaN(pin)) { alert("รหัส PIN ต้องมี 4 หลัก"); return; } const checkPin = await db.collection("staff").where("pin", "==", pin).get(); if(!checkPin.empty) { alert("PIN ซ้ำ"); return; } await db.collection("staff").doc(pin).set({ id: 'S' + Math.floor(10 + Math.random() * 90), name: name, pin: pin, role: role }); alert("สำเร็จ!"); renderAdminStaffList(); }
 async function deleteStaff(pin) { if(confirm("ลบพนักงานคนนี้?")) { await db.collection("staff").doc(pin).delete(); renderAdminStaffList(); } }
 
 // =========================================================
@@ -516,7 +401,12 @@ function processPayment(method) {
 
     db.collection("transactions").add({ tableId: data.tableId, tableName: data.tableName, method: method, hoursPlayed: data.hoursPlayed, timeFee: data.timeFee, itemsFee: data.itemsFee, grandTotal: data.grandTotal, staffId: currentStaff.id, staffName: currentStaff.name, timestamp: firebase.firestore.FieldValue.serverTimestamp(), items: data.receiptItems })
     .then(() => { fetch("https://onesignal.com/api/v1/notifications", { method: "POST", headers: { "Content-Type": "application/json; charset=utf-8", "Authorization": "Basic " + ONESIGNAL_REST_KEY }, body: JSON.stringify({ appId: ONESIGNAL_APP_ID, included_segments: ["Subscribed Users"], headings: { "en": "💰 รับเงิน - ดำรัส สนุ๊กเกอร์", "th": "💰 รับเงิน - ดำรัส สนุ๊กเกอร์" }, contents: { "en": `โต๊ะ ${data.tableName} | ยอด: ฿${data.grandTotal}`, "th": `โต๊ะ ${data.tableName} | ยอด: ฿${data.grandTotal}` } }) }); });
-    closeCheckoutModal(); document.getElementById("receipt-modal").classList.remove("hidden"); delete activeTables[data.tableId]; saveDataLocally(); renderTables();
+    
+    closeCheckoutModal(); document.getElementById("receipt-modal").classList.remove("hidden"); 
+    
+    // โต๊ะเช็คบิลแล้ว ข้อมูล session จะหายไปทันที (ลูกค้าเก่าสแกนใหม่จะใช้ไม่ได้)
+    delete activeTables[data.tableId]; 
+    saveDataLocally(); renderTables();
 }
 
 function saveReceiptImage() { html2canvas(document.getElementById("receipt-paper"), { scale: 2 }).then(canvas => { const link = document.createElement('a'); link.download = `Receipt_${new Date().getTime()}.png`; link.href = canvas.toDataURL("image/png"); link.click(); }); }
