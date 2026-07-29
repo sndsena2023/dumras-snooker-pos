@@ -74,22 +74,17 @@
                     <h1 class="text-xl font-bold text-gray-800">ดำรัส สนุ๊กเกอร์</h1>
                 </div>
                 <div class="flex items-center gap-2 sm:gap-4 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
-                    
-                    <!-- ปุ่มคิวออเดอร์ -->
                     <button id="btn-pending-orders" onclick="openPendingModal()" class="hidden bg-yellow-400 text-white px-4 py-1.5 rounded-full text-sm font-bold shadow-md hover:bg-yellow-500 animate-pulse relative shrink-0">
                         🔔 ออเดอร์เข้า <span id="pending-badge" class="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-5 h-5 flex items-center justify-center rounded-full border border-white">0</span>
                     </button>
-
                     <button onclick="openExpenseModal()" class="bg-red-50 text-red-600 hover:bg-red-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-red-200 shrink-0">💸 บันทึกรายจ่าย</button>
                     <button id="btn-admin-report" onclick="openReportModal()" class="hidden bg-green-100 text-green-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-green-200 shrink-0">📊 รายงานบัญชี</button>
                     <button id="btn-admin-manage" onclick="openProductManager()" class="hidden bg-purple-100 text-purple-700 px-3 py-1.5 rounded-lg text-sm font-medium border border-purple-200 shrink-0">⚙️ ตั้งค่าร้าน</button>
-                    
                     <div class="bg-blue-50 text-blue-700 px-4 py-1.5 rounded-full text-sm font-medium shrink-0"><span id="current-staff-name">...</span></div>
                     <button onclick="logout()" class="text-gray-500 hover:text-red-700 text-sm font-medium shrink-0">ออกระบบ</button>
                 </div>
             </div>
         </div>
-
         <div class="max-w-6xl mx-auto px-6 mt-6">
             <div class="flex items-center gap-2 mb-4"><div class="w-2 h-6 bg-blue-500 rounded-full"></div><h2 class="text-lg font-bold text-gray-700">โต๊ะธรรมดา (90 ฿/ชม.)</h2></div>
             <div id="normal-tables-container" class="grid grid-cols-2 md:grid-cols-4 gap-5 mb-8"></div>
@@ -98,21 +93,39 @@
         </div>
     </div>
 
-    <!-- ================= POPUP: คิวออเดอร์ลูกค้ารอรับ ================= -->
+    <!-- ================= POPUP: คิวออเดอร์ ================= -->
     <div id="pending-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 max-h-[90vh] flex flex-col">
-            <div class="flex justify-between items-center mb-4 shrink-0 border-b pb-3">
-                <h2 class="text-xl font-bold text-yellow-600">🔔 ออเดอร์จากมือถือลูกค้า</h2>
-                <button onclick="closePendingModal()" class="text-gray-400 hover:text-red-500 text-xl font-bold">✕</button>
+            <div class="flex justify-between items-center mb-4 shrink-0 border-b pb-3"><h2 class="text-xl font-bold text-yellow-600">🔔 ออเดอร์จากมือถือลูกค้า</h2><button onclick="closePendingModal()" class="text-gray-400 hover:text-red-500 text-xl font-bold">✕</button></div>
+            <div id="pending-orders-list" class="flex-1 overflow-y-auto space-y-4"><p class="text-center text-gray-400 py-10">ไม่มีออเดอร์ค้าง</p></div>
+        </div>
+    </div>
+
+    <!-- ================= [ใหม่] POPUP: แสดง QR Code เฉพาะรอบ (Dynamic) ================= -->
+    <div id="dynamic-qr-modal" class="hidden fixed inset-0 z-[80] bg-black bg-opacity-70 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-blue-700" id="qr-modal-title">QR สั่งอาหารโต๊ะ...</h2>
+                <button onclick="closeDynamicQRModal()" class="text-gray-400 hover:text-red-500 text-xl font-bold bg-gray-100 w-8 h-8 rounded-full flex items-center justify-center">✕</button>
             </div>
-            <div id="pending-orders-list" class="flex-1 overflow-y-auto space-y-4">
-                <p class="text-center text-gray-400 py-10">ไม่มีออเดอร์ค้าง</p>
+            
+            <div class="bg-gradient-to-b from-blue-50 to-blue-100 p-4 rounded-xl mb-4 border border-blue-200 flex flex-col items-center justify-center shadow-inner relative">
+                <!-- กรอบเล็งสแกน -->
+                <div class="absolute inset-2 border-2 border-blue-300 border-dashed rounded-lg pointer-events-none opacity-50"></div>
+                <img id="dynamic-qr-image" src="" alt="QR Code" class="w-48 h-48 rounded-lg shadow-sm bg-white p-2 relative z-10">
+            </div>
+            
+            <p class="text-sm text-gray-700 font-bold mb-2">ให้ลูกค้าสแกนเพื่อสั่งอาหาร 🍟</p>
+            <p class="text-xs text-red-500 font-medium mb-4">⚠️ QR Code จะเปลี่ยนใหม่ทุกครั้งที่มีการเปิดโต๊ะใหม่ (ของเก่าจะใช้ไม่ได้)</p>
+            
+            <div class="border-t pt-4">
+                <a id="dynamic-qr-link" href="#" target="_blank" class="text-xs font-bold text-blue-500 bg-blue-50 px-4 py-2 rounded-lg inline-block border border-blue-100 hover:bg-blue-100">🔗 ทดลองเปิดลิงก์นี้ (สำหรับแอดมินทดสอบ)</a>
             </div>
         </div>
     </div>
 
-    <!-- ================= POPUP อื่นๆ (รายจ่าย, สั่งของ, ตั้งค่า, บัญชี, จ่ายเงิน) ================= -->
-    <!-- (คงโค้ด Popup เดิมไว้ทั้งหมด ยกเว้นส่วนที่แก้ไขเรื่องสต๊อกใน app.js) -->
+    <!-- ================= POPUP อื่นๆ (รายจ่าย, สั่งของ, ตั้งค่า, บัญชี, จ่ายเงิน, ใบเสร็จ) ================= -->
+    <!-- (คงโค้ดส่วนนี้ไว้เหมือนเดิมทั้งหมดครับ) -->
     
     <div id="expense-modal" class="hidden fixed inset-0 z-[60] bg-black bg-opacity-60 flex items-center justify-center p-4">
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6"><div class="flex justify-between items-center mb-4"><h2 class="text-xl font-bold text-red-600">💸 บันทึกรายจ่ายร้าน</h2><button onclick="closeExpenseModal()" class="text-gray-400 hover:text-red-500 text-xl">✕</button></div><div class="space-y-4 mb-6"><div><label class="block text-sm font-medium text-gray-700 mb-1">รายละเอียดค่าใช้จ่าย</label><input type="text" id="expense-desc" placeholder="เช่น ค่าเครื่องดื่ม, ค่าน้ำแข็ง" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-sm"></div><div><label class="block text-sm font-medium text-gray-700 mb-1">จำนวนเงิน (บาท)</label><input type="number" id="expense-amount" placeholder="0" class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-red-500 text-lg font-bold text-red-600"></div></div><button onclick="saveExpense()" class="w-full bg-red-500 hover:bg-red-600 text-white font-bold py-3 rounded-xl shadow-md">บันทึกรายจ่าย</button></div>
